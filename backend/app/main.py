@@ -1,16 +1,15 @@
 import os
 import re
-import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, create_engine, select, desc
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -18,7 +17,6 @@ load_dotenv()
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vegz_shop.db")
 JWT_SECRET = os.getenv("JWT_SECRET", "local-dev-only-change-this-secret")
-JWT_ALGORITHM = "HS256"
 engine_kwargs = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
@@ -72,7 +70,7 @@ class ShopOrder(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Vegz Shop API", version="1.0.0", description="Shop-owner catalog, inventory, availability, and order operations.")
+app = FastAPI(title="Vegz Shop API", version="1.0.1", description="Shop-owner catalog, inventory, availability, and order operations.")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if x.strip()],
@@ -137,7 +135,8 @@ def product_payload(p: Product):
     return {"id": p.id, "name": p.name, "category": p.category, "description": p.description,
             "image_url": p.image_url, "unit": p.unit, "price": float(p.price),
             "stock_qty": p.stock_qty, "stock_state": "out_of_stock" if p.stock_qty <= 0 else "in_stock",
-            "is_available": p.is_available and p.stock_qty > 0,
+            "is_available": bool(p.is_available),
+            "customer_can_order": bool(p.is_available and p.stock_qty > 0),
             "created_at": p.created_at.isoformat() + "Z"}
 
 
@@ -153,7 +152,7 @@ def current_shop(authorization: str | None = Header(default=None), db: Session =
         raise HTTPException(status_code=401, detail="Sign in as the shop owner first.")
     token = authorization.split(" ", 1)[1].strip()
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         shop_id = int(payload["shop_id"])
     except (jwt.InvalidTokenError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
@@ -174,6 +173,8 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
     if APP_ENV == "production":
         raise HTTPException(status_code=503, detail="Configure the production identity provider before enabling shop-owner sign-in.")
     phone = re.sub(r"[^0-9+]", "", payload.phone)
+    if len(re.sub(r"\D", "", phone)) < 8:
+        raise HTTPException(status_code=400, detail="Enter a valid owner mobile number.")
     if payload.demo_code != os.getenv("SHOP_DEMO_CODE", "123456"):
         raise HTTPException(status_code=400, detail="Invalid development code. Use the configured demo code.")
     shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
@@ -182,7 +183,7 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
         db.add(shop)
         db.commit()
         db.refresh(shop)
-    token = jwt.encode({"shop_id": shop.id, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode({"shop_id": shop.id, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm="HS256")
     return {"access_token": token, "token_type": "bearer", "shop": shop_payload(shop)}
 
 
@@ -202,8 +203,7 @@ def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Sess
 
 @app.get("/api/products")
 def list_products(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
-    products = db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()
-    return [product_payload(p) for p in products]
+    return [product_payload(p) for p in db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()]
 
 
 @app.post("/api/products", status_code=201)
@@ -275,23 +275,19 @@ def dashboard(shop: Shop = Depends(current_shop), db: Session = Depends(get_db))
     orders = db.scalars(select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))).all()
     today = datetime.utcnow().date()
     todays = [o for o in orders if o.created_at.date() == today and o.status != "cancelled"]
-    return {
-        "shop": shop_payload(shop),
-        "metrics": {
-            "products": len(products),
-            "in_stock": sum(1 for p in products if p.stock_qty > 0 and p.is_available),
-            "out_of_stock": sum(1 for p in products if p.stock_qty <= 0 or not p.is_available),
-            "new_orders": sum(1 for o in orders if o.status == "placed"),
-            "active_orders": sum(1 for o in orders if o.status in {"accepted", "preparing", "ready", "out_for_delivery"}),
-            "today_sales": round(sum(float(o.total_amount) for o in todays if o.status != "cancelled"), 2),
-        },
-        "recent_orders": [order_payload(o) for o in orders[:5]],
-    }
+    return {"shop": shop_payload(shop), "metrics": {
+        "products": len(products),
+        "in_stock": sum(1 for p in products if p.stock_qty > 0 and p.is_available),
+        "out_of_stock": sum(1 for p in products if p.stock_qty <= 0 or not p.is_available),
+        "new_orders": sum(1 for o in orders if o.status == "placed"),
+        "active_orders": sum(1 for o in orders if o.status in {"accepted", "preparing", "ready", "out_for_delivery"}),
+        "today_sales": round(sum(float(o.total_amount) for o in todays if o.status != "cancelled"), 2),
+    }, "recent_orders": [order_payload(o) for o in orders[:5]]}
 
 
 @app.post("/api/dev/seed")
 def seed_demo_data(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
-    """Creates sample vegetable listings once for this shop; never seeds another shop's data."""
+    """Creates sample vegetable listings once for this shop."""
     if db.scalar(select(Product.id).where(Product.shop_id == shop.id).limit(1)) is not None:
         return {"message": "This shop already has products."}
     items = [
