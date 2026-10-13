@@ -1,0 +1,312 @@
+import os
+import re
+import secrets
+from datetime import datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+
+import jwt
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, create_engine, select, desc
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+load_dotenv()
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vegz_shop.db")
+JWT_SECRET = os.getenv("JWT_SECRET", "local-dev-only-change-this-secret")
+JWT_ALGORITHM = "HS256"
+engine_kwargs = {"pool_pre_ping": True}
+if DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+engine = create_engine(DATABASE_URL, **engine_kwargs)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Shop(Base):
+    __tablename__ = "shops"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), default="My Vegz Shop")
+    address: Mapped[str] = mapped_column(String(300), default="")
+    is_open: Mapped[bool] = mapped_column(Boolean, default=True)
+    accepts_orders: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Product(Base):
+    __tablename__ = "products"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shop_id: Mapped[int] = mapped_column(ForeignKey("shops.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    category: Mapped[str] = mapped_column(String(60), default="Vegetables")
+    description: Mapped[str] = mapped_column(String(300), default="")
+    image_url: Mapped[str] = mapped_column(String(500), default="")
+    unit: Mapped[str] = mapped_column(String(24), default="kg")
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    stock_qty: Mapped[int] = mapped_column(Integer, default=0)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ShopOrder(Base):
+    __tablename__ = "shop_orders"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shop_id: Mapped[int] = mapped_column(ForeignKey("shops.id"), index=True)
+    customer_name: Mapped[str] = mapped_column(String(120), default="Vegz customer")
+    customer_phone: Mapped[str] = mapped_column(String(20), default="")
+    delivery_address: Mapped[str] = mapped_column(String(400), default="")
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    status: Mapped[str] = mapped_column(String(32), default="placed", index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Vegz Shop API", version="1.0.0", description="Shop-owner catalog, inventory, availability, and order operations.")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if x.strip()],
+    allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+class ProductIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    category: str = Field(default="Vegetables", max_length=60)
+    description: str = Field(default="", max_length=300)
+    image_url: str = Field(default="", max_length=500)
+    unit: str = Field(default="kg", max_length=24)
+    price: Decimal = Field(gt=0, le=100000)
+    stock_qty: int = Field(default=0, ge=0, le=1000000)
+    is_available: bool = True
+
+
+class ProductPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    category: str | None = Field(default=None, max_length=60)
+    description: str | None = Field(default=None, max_length=300)
+    image_url: str | None = Field(default=None, max_length=500)
+    unit: str | None = Field(default=None, max_length=24)
+    price: Decimal | None = Field(default=None, gt=0, le=100000)
+    stock_qty: int | None = Field(default=None, ge=0, le=1000000)
+    is_available: bool | None = None
+
+
+class ShopPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    address: str | None = Field(default=None, max_length=300)
+    is_open: bool | None = None
+    accepts_orders: bool | None = None
+
+
+class OrderStatusPatch(BaseModel):
+    status: str
+
+
+class DemoLogin(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    demo_code: str = Field(min_length=4, max_length=10)
+
+
+def shop_payload(shop: Shop):
+    return {"id": shop.id, "owner_phone": shop.owner_phone, "name": shop.name, "address": shop.address,
+            "is_open": shop.is_open, "accepts_orders": shop.accepts_orders,
+            "created_at": shop.created_at.isoformat() + "Z"}
+
+
+def product_payload(p: Product):
+    return {"id": p.id, "name": p.name, "category": p.category, "description": p.description,
+            "image_url": p.image_url, "unit": p.unit, "price": float(p.price),
+            "stock_qty": p.stock_qty, "stock_state": "out_of_stock" if p.stock_qty <= 0 else "in_stock",
+            "is_available": p.is_available and p.stock_qty > 0,
+            "created_at": p.created_at.isoformat() + "Z"}
+
+
+def order_payload(o: ShopOrder):
+    return {"id": o.id, "customer_name": o.customer_name, "customer_phone": o.customer_phone,
+            "delivery_address": o.delivery_address, "total_amount": float(o.total_amount),
+            "status": o.status, "note": o.note,
+            "created_at": o.created_at.isoformat() + "Z", "updated_at": o.updated_at.isoformat() + "Z"}
+
+
+def current_shop(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> Shop:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Sign in as the shop owner first.")
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        shop_id = int(payload["shop_id"])
+    except (jwt.InvalidTokenError, KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+    shop = db.get(Shop, shop_id)
+    if shop is None:
+        raise HTTPException(status_code=401, detail="Shop account not found.")
+    return shop
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "service": "vegz-shop-api"}
+
+
+@app.post("/api/auth/demo-login")
+def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
+    """Development-only sign-in; replace with SMS OTP/approved identity provider in production."""
+    if APP_ENV == "production":
+        raise HTTPException(status_code=503, detail="Configure the production identity provider before enabling shop-owner sign-in.")
+    phone = re.sub(r"[^0-9+]", "", payload.phone)
+    if payload.demo_code != os.getenv("SHOP_DEMO_CODE", "123456"):
+        raise HTTPException(status_code=400, detail="Invalid development code. Use the configured demo code.")
+    shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
+    if shop is None:
+        shop = Shop(owner_phone=phone, name="My Vegz Shop")
+        db.add(shop)
+        db.commit()
+        db.refresh(shop)
+    token = jwt.encode({"shop_id": shop.id, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return {"access_token": token, "token_type": "bearer", "shop": shop_payload(shop)}
+
+
+@app.get("/api/shop")
+def get_shop(shop: Shop = Depends(current_shop)):
+    return shop_payload(shop)
+
+
+@app.patch("/api/shop")
+def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(shop, key, value)
+    db.commit()
+    db.refresh(shop)
+    return shop_payload(shop)
+
+
+@app.get("/api/products")
+def list_products(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    products = db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()
+    return [product_payload(p) for p in products]
+
+
+@app.post("/api/products", status_code=201)
+def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    p = Product(shop_id=shop.id, **payload.model_dump())
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return product_payload(p)
+
+
+@app.patch("/api/products/{product_id}")
+def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
+    if p is None:
+        raise HTTPException(status_code=404, detail="Vegetable not found.")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(p, key, value)
+    db.commit()
+    db.refresh(p)
+    return product_payload(p)
+
+
+@app.delete("/api/products/{product_id}")
+def delete_product(product_id: int, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
+    if p is None:
+        raise HTTPException(status_code=404, detail="Vegetable not found.")
+    db.delete(p)
+    db.commit()
+    return {"message": "Vegetable removed from your catalog."}
+
+
+@app.get("/api/orders")
+def list_orders(status_filter: str | None = None, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    query = select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))
+    if status_filter:
+        query = query.where(ShopOrder.status == status_filter)
+    return [order_payload(o) for o in db.scalars(query).all()]
+
+
+@app.patch("/api/orders/{order_id}/status")
+def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    allowed = {
+        "placed": {"accepted", "cancelled"},
+        "accepted": {"preparing", "cancelled"},
+        "preparing": {"ready", "cancelled"},
+        "ready": {"out_for_delivery", "cancelled"},
+        "out_for_delivery": {"delivered"},
+        "delivered": set(),
+        "cancelled": set(),
+    }
+    o = db.scalar(select(ShopOrder).where(ShopOrder.id == order_id, ShopOrder.shop_id == shop.id))
+    if o is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    next_status = payload.status.strip().lower()
+    if next_status not in allowed.get(o.status, set()):
+        raise HTTPException(status_code=409, detail=f"Cannot move order from {o.status} to {next_status}.")
+    o.status = next_status
+    o.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(o)
+    return order_payload(o)
+
+
+@app.get("/api/dashboard")
+def dashboard(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    products = db.scalars(select(Product).where(Product.shop_id == shop.id)).all()
+    orders = db.scalars(select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))).all()
+    today = datetime.utcnow().date()
+    todays = [o for o in orders if o.created_at.date() == today and o.status != "cancelled"]
+    return {
+        "shop": shop_payload(shop),
+        "metrics": {
+            "products": len(products),
+            "in_stock": sum(1 for p in products if p.stock_qty > 0 and p.is_available),
+            "out_of_stock": sum(1 for p in products if p.stock_qty <= 0 or not p.is_available),
+            "new_orders": sum(1 for o in orders if o.status == "placed"),
+            "active_orders": sum(1 for o in orders if o.status in {"accepted", "preparing", "ready", "out_for_delivery"}),
+            "today_sales": round(sum(float(o.total_amount) for o in todays if o.status != "cancelled"), 2),
+        },
+        "recent_orders": [order_payload(o) for o in orders[:5]],
+    }
+
+
+@app.post("/api/dev/seed")
+def seed_demo_data(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+    """Creates sample vegetable listings once for this shop; never seeds another shop's data."""
+    if db.scalar(select(Product.id).where(Product.shop_id == shop.id).limit(1)) is not None:
+        return {"message": "This shop already has products."}
+    items = [
+        ("Tomato", "Daily essentials", "kg", "32.00", 40),
+        ("Potato", "Daily essentials", "kg", "28.00", 55),
+        ("Onion", "Daily essentials", "kg", "36.00", 30),
+        ("Carrot", "Fresh picks", "kg", "45.00", 18),
+        ("Spinach", "Leafy greens", "bunch", "20.00", 12),
+    ]
+    for name, category, unit, price, stock in items:
+        db.add(Product(shop_id=shop.id, name=name, category=category, unit=unit, price=Decimal(price), stock_qty=stock))
+    db.commit()
+    return {"message": "Sample vegetables added."}
+
+
+frontend_dir = Path(__file__).resolve().parents[2] / "frontend"
+if frontend_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
