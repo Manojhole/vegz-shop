@@ -109,7 +109,8 @@ function renderProducts() {
   $("#product-grid").innerHTML = products.map(p => {
     const inStock = p.stock_qty > 0 && p.is_available;
     const badge = p.stock_qty <= 0 ? '<span class="status-pill status-cancelled">Out of stock</span>' : !p.is_available ? '<span class="status-pill status-cancelled">Hidden</span>' : p.stock_qty < 5 ? '<span class="status-pill status-placed">Low stock</span>' : '<span class="status-pill status-delivered">In stock</span>';
-    const image = p.image_url ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" onerror="this.remove();this.parentElement.querySelector('.product-fallback').classList.remove('hidden')">` : "";
+    const imageUrl = (p.image_urls && p.image_urls.length ? p.image_urls[0] : p.image_url) || "";
+    const image = imageUrl ? '<img src="' + esc(imageUrl) + '" alt="' + esc(p.name) + '" loading="lazy" onerror="this.remove();this.parentElement.querySelector(\'.product-fallback\').classList.remove(\'hidden\')">' : "";
     return `<article class="product-card"><div class="product-card-art">${image}<span class="product-fallback ${p.image_url ? "hidden" : ""}">${vegEmoji(p.name)}</span>${badge}</div><div class="product-content">
       <div class="product-category">${esc(p.category)}</div><h3>${esc(p.name)}</h3><div class="product-price">${money(p.price)} <span>/ ${esc(p.unit)}</span></div>
       <div class="product-stock-line"><span>Stock available</span><strong>${Number(p.stock_qty)} ${esc(p.unit)}</strong></div>
@@ -146,7 +147,9 @@ function openProduct(product = null) {
   $("#product-unit").value = product?.unit || "kg";
   $("#product-price").value = product?.price ?? "";
   $("#product-stock").value = product?.stock_qty ?? 0;
-  $("#product-image").value = product?.image_url || "";
+  $("#product-images").value = "";
+  const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : []);
+  $("#existing-product-images").innerHTML = imageList.map(url => '<img src="' + esc(url) + '" alt="Current product photo">').join("");
   $("#product-description").value = product?.description || "";
   $("#product-available").checked = product?.is_available ?? true;
   $("#product-dialog").showModal();
@@ -210,12 +213,23 @@ $("#product-form").addEventListener("submit",async e=>{
   const payload = {
     name:$("#product-name").value.trim(), category:$("#product-category").value, unit:$("#product-unit").value,
     price:Number($("#product-price").value), stock_qty:Number($("#product-stock").value),
-    image_url:$("#product-image").value.trim(), description:$("#product-description").value.trim(),
+    image_url:"", description:$("#product-description").value.trim(),
     is_available:$("#product-available").checked
   };
   if (!payload.name || !Number.isFinite(payload.price) || payload.price <= 0 || !Number.isInteger(payload.stock_qty) || payload.stock_qty < 0) return toast("Check the vegetable name, positive price, and whole-number stock.",true);
   const button = $("#save-product-btn"); setBusy(button,true,"Saving…");
-  try { await api(id ? `/api/products/${id}` : "/api/products",{method:id?"PATCH":"POST",body:JSON.stringify(payload)}); $("#product-dialog").close(); await refreshAll(); toast(id?"Vegetable updated.":"Vegetable added to your catalog."); }
+  try {
+    const saved = await api(id ? "/api/products/"+id : "/api/products",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});
+    const photos = Array.from($("#product-images").files || []);
+    if (photos.length > 3) throw new Error("Choose no more than 3 photos.");
+    if (photos.length) {
+      const form = new FormData(); photos.forEach(file => form.append("files", file));
+      const response = await fetch("/api/products/"+saved.id+"/images", {method:"POST",headers:{Authorization:"Bearer "+state.token},body:form});
+      const data = await response.json().catch(()=>({}));
+      if (!response.ok) throw new Error(data.detail || "Could not upload product photos.");
+    }
+    $("#product-dialog").close(); await refreshAll(); toast(id?"Product updated.":"Product added to your catalog.");
+  }
   catch(err){toast(err.message,true);}
   finally{setBusy(button,false);}
 });
