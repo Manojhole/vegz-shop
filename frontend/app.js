@@ -149,6 +149,7 @@ function openProduct(product = null) {
   $("#product-unit").value = product?.unit || "kg";
   $("#product-price").value = product?.price ?? "";
   $("#product-stock").value = product?.stock_qty ?? 0;
+  $("#product-out-of-stock").checked = (product?.stock_qty ?? 0) <= 0;
   $("#product-images").value = "";
   const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : []);
   $("#existing-product-images").innerHTML = imageList.map(url => '<img src="' + esc(url) + '" alt="Current product photo">').join("");
@@ -214,7 +215,7 @@ $("#product-form").addEventListener("submit",async e=>{
   const id = $("#product-id").value;
   const payload = {
     name:$("#product-name").value.trim(), category:$("#product-category").value, unit:$("#product-unit").value,
-    price:Number($("#product-price").value), stock_qty:Number($("#product-stock").value),
+    price:Number($("#product-price").value), stock_qty:$("#product-out-of-stock").checked ? 0 : Number($("#product-stock").value),
     image_url:"", description:$("#product-description").value.trim(),
     is_available:$("#product-available").checked
   };
@@ -235,6 +236,8 @@ $("#product-form").addEventListener("submit",async e=>{
   catch(err){toast(err.message,true);}
   finally{setBusy(button,false);}
 });
+$("#product-out-of-stock").addEventListener("change", e => { if (e.target.checked) $("#product-stock").value = "0"; });
+$("#product-stock").addEventListener("input", e => { if (Number(e.target.value) > 0) $("#product-out-of-stock").checked = false; else if (e.target.value === "0") $("#product-out-of-stock").checked = true; });
 $("#product-search").addEventListener("input",renderProducts);
 $("#stock-filter").addEventListener("change",renderProducts);
 $("#order-tabs").addEventListener("click", e => {
