@@ -52,7 +52,8 @@ Container build:
 
 ```bash
 docker build -t vegz-shop .
-docker run --rm -p 8000:8000 -e JWT_SECRET='replace-with-a-long-random-secret' -e APP_ENV=development vegz-shop
+docker volume create vegz-shop-uploads
+docker run --rm -p 8000:8000 -v vegz-shop-uploads:/app/frontend/uploads -e JWT_SECRET='replace-with-a-long-random-secret' -e APP_ENV=development vegz-shop
 ```
 
 ## API overview
