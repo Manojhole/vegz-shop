@@ -6,11 +6,11 @@ Shop-owner portal for the Vegz vegetable ordering platform. This is a separate r
 
 - Responsive web dashboard for laptop, tablet and mobile.
 - Shop-owner development sign-in; owner data is scoped to the signed-in shop.
-- Add, edit, hide and remove vegetables or grocery items, update prices/stock, and upload up to three real product photos (JPG/PNG/WEBP, max 5 MB each).
+- Register as a vegetable shop or grocery shop; shop type controls product categories and where the shop appears in Vegz User. Add, edit, hide and remove products, update prices/stock, and upload up to three real product photos (JPG/PNG/WEBP, max 5 MB each).
 - Inventory tracking, including in-stock, low-stock, hidden and out-of-stock states.
 - Shop open/closed and accepting-orders controls.
 - Orders inbox with status transitions: placed -> accepted -> preparing -> ready -> out for delivery -> delivered. Cancellation is allowed before dispatch.
-- Public `/api/marketplace` catalog grouped by open shop; authenticated `/api/internal/orders` for the trusted customer-order service; dashboard metrics for catalog, stock, orders and sales.
+- Public `/api/marketplace` catalog grouped by open shop and tagged with `shop_type` (`vegetable` or `grocery`); authenticated `/api/internal/orders` for the trusted customer-order service; dashboard metrics for catalog, stock, orders and sales.
 - FastAPI, SQLAlchemy and SQLite by default; MySQL-compatible via DATABASE_URL.
 - Dockerfile and GitHub Actions CI.
 
