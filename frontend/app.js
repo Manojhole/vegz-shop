@@ -78,7 +78,7 @@ function statusActions(order, compact) {
 function renderOrderRows(orders, compact = false) {
   if (!orders.length) return "";
   return orders.map(o => `<article class="order-card">
-    <div class="order-primary"><strong>Order #VGZ-${String(o.id).padStart(4,"0")}</strong><small>${esc(o.customer_name)} · ${esc(o.customer_phone || "Phone not shared")}</small><small>${new Date(o.created_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}</small></div>
+    <div class="order-primary"><strong>Order #VGZ-${String(o.id).padStart(4,"0")}</strong><small>${esc(o.customer_name)} · ${esc(o.customer_phone || "Phone not shared")}</small><small>${esc(o.note || "Items from customer order")}</small><small>${new Date(o.created_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}</small></div>
     <div class="order-secondary">${statusPill(o.status)}<small>${esc(o.delivery_address || "Delivery address not set")}</small><strong>${money(o.total_amount)}</strong></div>
     <div class="order-actions">${statusActions(o, compact)}</div>
   </article>`).join("");
