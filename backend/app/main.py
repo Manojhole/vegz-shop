@@ -38,6 +38,7 @@ class Shop(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120), default="My Vegz Shop")
+    shop_type: Mapped[str] = mapped_column(String(20), default="vegetable", index=True)
     address: Mapped[str] = mapped_column(String(300), default="")
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     accepts_orders: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -80,6 +81,9 @@ with engine.begin() as connection:
     columns = {column["name"] for column in inspect(engine).get_columns("products")}
     if "image_urls" not in columns:
         connection.execute(text("ALTER TABLE products ADD COLUMN image_urls TEXT NOT NULL DEFAULT '[]'"))
+    shop_columns = {column["name"] for column in inspect(engine).get_columns("shops")}
+    if "shop_type" not in shop_columns:
+        connection.execute(text("ALTER TABLE shops ADD COLUMN shop_type VARCHAR(20) NOT NULL DEFAULT 'vegetable'"))
 
 app = FastAPI(title="Vegz Shop API", version="1.0.1", description="Shop-owner catalog, inventory, availability, and order operations.")
 app.add_middleware(
@@ -124,6 +128,7 @@ class ProductPatch(BaseModel):
 
 class ShopPatch(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
+    shop_type: str | None = Field(default=None, pattern=r"^(vegetable|grocery)$")
     address: str | None = Field(default=None, max_length=300)
     is_open: bool | None = None
     accepts_orders: bool | None = None
@@ -149,11 +154,12 @@ class OrderStatusPatch(BaseModel):
 
 class DemoLogin(BaseModel):
     phone: str = Field(min_length=8, max_length=20)
+    shop_type: str = Field(default="vegetable", pattern=r"^(vegetable|grocery)$")
     demo_code: str = Field(min_length=4, max_length=10)
 
 
 def shop_payload(shop: Shop):
-    return {"id": shop.id, "owner_phone": shop.owner_phone, "name": shop.name, "address": shop.address,
+    return {"id": shop.id, "owner_phone": shop.owner_phone, "name": shop.name, "shop_type": shop.shop_type, "address": shop.address,
             "is_open": shop.is_open, "accepts_orders": shop.accepts_orders,
             "created_at": shop.created_at.isoformat() + "Z"}
 
@@ -207,7 +213,7 @@ def marketplace(db: Session = Depends(get_db)):
         if not items:
             continue
         result.append({
-            "shop_id": shop.id, "shop_name": shop.name, "shop_address": shop.address,
+            "shop_id": shop.id, "shop_name": shop.name, "shop_type": shop.shop_type, "shop_address": shop.address,
             "products": [product_payload(item) for item in items],
         })
     return result
@@ -230,7 +236,7 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid development code. Use the configured demo code.")
     shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
     if shop is None:
-        shop = Shop(owner_phone=phone, name="My Vegz Shop")
+        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type)
         db.add(shop)
         db.commit()
         db.refresh(shop)
