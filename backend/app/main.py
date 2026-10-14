@@ -339,7 +339,7 @@ def create_internal_order(
     """Create a shop-owned suborder from the trusted customer-order service."""
     expected = os.getenv("SHOP_INTERNAL_TOKEN", "")
     supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
-    if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
+    if len(expected) < 32 or "replace-with" in expected.lower() or not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="Internal order authentication failed.")
     shop = db.get(Shop, payload.shop_id)
     if shop is None or not shop.is_open or not shop.accepts_orders:
