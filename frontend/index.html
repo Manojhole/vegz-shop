@@ -13,7 +13,7 @@
       <div class="brand"><span class="brand-mark">v</span><span>vegz<span class="brand-light">shop</span></span></div>
       <p class="eyebrow">SHOP OWNER PORTAL</p>
       <h1>Your shop.<br><span>Your business.</span></h1>
-      <p class="muted">Manage vegetables, live stock, incoming orders and shop availability in one place.</p>
+      <p class="muted">Manage vegetables and groceries, real product photos, live stock, incoming orders and shop availability in one place.</p>
       <form id="login-form">
         <label for="phone">Owner mobile number</label>
         <input id="phone" type="tel" autocomplete="tel" placeholder="+91 98765 43210" required minlength="8">
@@ -32,7 +32,7 @@
       <div class="shop-mini"><div class="shop-avatar">🥬</div><div><strong id="sidebar-shop-name">My Vegz Shop</strong><small>Shop owner</small></div><span class="online-dot"></span></div>
       <nav id="nav">
         <button class="nav-item active" data-view="overview"><span>▦</span> Overview</button>
-        <button class="nav-item" data-view="products"><span>▤</span> My vegetables <span id="nav-products-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-view="products"><span>▤</span> My products <span id="nav-products-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="orders"><span>▣</span> Orders <span id="nav-orders-count" class="nav-count alert-count">0</span></button>
         <button class="nav-item" data-view="settings"><span>⚙</span> Shop settings</button>
       </nav>
@@ -46,7 +46,7 @@
       <section id="view-overview" class="view">
         <div class="hero-strip"><div><span class="hero-kicker">YOUR DAILY SNAPSHOT</span><h2>Small updates. <span>Happy customers.</span></h2><p>Make sure your prices, stock and orders are always up to date.</p></div><div class="hero-glyph">🌿</div></div>
         <div class="stats-grid">
-          <article class="stat-card"><div class="stat-top"><span>Total vegetables</span><span class="stat-icon lilac">▤</span></div><div class="stat-value" id="stat-products">0</div><div class="stat-foot">In your catalog</div></article>
+          <article class="stat-card"><div class="stat-top"><span>Total products</span><span class="stat-icon lilac">▤</span></div><div class="stat-value" id="stat-products">0</div><div class="stat-foot">In your catalog</div></article>
           <article class="stat-card"><div class="stat-top"><span>In stock</span><span class="stat-icon green">✓</span></div><div class="stat-value" id="stat-in-stock">0</div><div class="stat-foot"><span class="green-text">Available</span> to customers</div></article>
           <article class="stat-card"><div class="stat-top"><span>New orders</span><span class="stat-icon orange">↗</span></div><div class="stat-value" id="stat-new-orders">0</div><div class="stat-foot">Need your attention</div></article>
           <article class="stat-card"><div class="stat-top"><span>Today's sales</span><span class="stat-icon blue">₹</span></div><div class="stat-value" id="stat-sales">₹0</div><div class="stat-foot">Excluding cancelled orders</div></article>
@@ -58,10 +58,10 @@
       </section>
 
       <section id="view-products" class="view hidden">
-        <div class="toolbar"><div class="search-wrap"><span>⌕</span><input id="product-search" placeholder="Search vegetables..." aria-label="Search vegetables"></div><select id="stock-filter" aria-label="Filter stock"><option value="all">All stock status</option><option value="in">In stock</option><option value="out">Out of stock / hidden</option></select><button id="add-product-btn" class="btn primary">＋ Add vegetable</button></div>
+        <div class="toolbar"><div class="search-wrap"><span>⌕</span><input id="product-search" placeholder="Search products..." aria-label="Search vegetables"></div><select id="stock-filter" aria-label="Filter stock"><option value="all">All stock status</option><option value="in">In stock</option><option value="out">Out of stock / hidden</option></select><button id="add-product-btn" class="btn primary">＋ Add product</button></div>
         <div class="catalog-summary"><span id="catalog-summary-text">Your catalog</span><span class="muted">Update prices and stock anytime.</span></div>
         <div id="product-grid" class="product-grid"></div>
-        <div id="products-empty" class="empty-state hidden"><div>🥦</div><h3>No vegetables yet</h3><p>Add your first item to start building your shop catalog.</p><button class="btn primary" id="empty-add-btn">＋ Add vegetable</button></div>
+        <div id="products-empty" class="empty-state hidden"><div>🥦</div><h3>No vegetables yet</h3><p>Add your first item to start building your shop catalog.</p><button class="btn primary" id="empty-add-btn">＋ Add product</button></div>
       </section>
 
       <section id="view-orders" class="view hidden">
@@ -89,15 +89,15 @@
 
   <dialog id="product-dialog" class="modal">
     <form id="product-form" method="dialog">
-      <div class="modal-head"><div><span class="eyebrow">PRODUCT CATALOG</span><h2 id="product-dialog-title">Add vegetable</h2><p>Add a new item or update an existing listing.</p></div><button type="button" class="close-btn" id="close-product-dialog" aria-label="Close">×</button></div>
+      <div class="modal-head"><div><span class="eyebrow">PRODUCT CATALOG</span><h2 id="product-dialog-title">Add product</h2><p>Add a new item or update an existing listing.</p></div><button type="button" class="close-btn" id="close-product-dialog" aria-label="Close">×</button></div>
       <input id="product-id" type="hidden">
       <label for="product-name">Vegetable name *</label><input id="product-name" required maxlength="120" placeholder="e.g. Fresh tomatoes">
       <div class="form-two"><div><label for="product-category">Category</label><select id="product-category"><option>Daily essentials</option><option>Fresh picks</option><option>Leafy greens</option><option>Root vegetables</option><option>Seasonal</option><option>Vegetables</option></select></div><div><label for="product-unit">Selling unit *</label><select id="product-unit"><option value="kg">Kilogram (kg)</option><option value="g">Gram (g)</option><option value="bunch">Bunch</option><option value="pc">Piece</option><option value="packet">Packet</option><option value="dozen">Dozen</option></select></div></div>
       <div class="form-two"><div><label for="product-price">Price (₹) *</label><input id="product-price" type="number" min="0.01" step="0.01" required placeholder="0.00"></div><div><label for="product-stock">Stock quantity *</label><input id="product-stock" type="number" min="0" step="1" required placeholder="0"></div></div>
-      <label for="product-image">Image URL (optional)</label><input id="product-image" type="url" maxlength="500" placeholder="https://...">
+      <label for="product-images">Product photos (up to 3 real images)</label><input id="product-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><p class="hint">Upload up to 3 JPG, PNG or WEBP photos, max 5 MB each. New uploads replace the current photos.</p><div id="existing-product-images" class="product-image-preview" aria-live="polite"></div>
       <label for="product-description">Description (optional)</label><textarea id="product-description" rows="2" maxlength="300" placeholder="Quality, freshness or sourcing notes"></textarea>
       <div class="setting-row compact"><div><strong>Listing visible</strong><p>When on and stock is above zero, customers can see the item.</p></div><label class="switch"><input id="product-available" type="checkbox" checked><span class="slider"></span></label></div>
-      <div class="modal-actions"><button type="button" class="btn secondary" id="cancel-product">Cancel</button><button class="btn primary" type="submit" id="save-product-btn">Save vegetable</button></div>
+      <div class="modal-actions"><button type="button" class="btn secondary" id="cancel-product">Cancel</button><button class="btn primary" type="submit" id="save-product-btn">Save product</button></div>
     </form>
   </dialog>
   <script src="/app.js" defer></script>
