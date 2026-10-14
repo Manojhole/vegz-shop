@@ -6,11 +6,11 @@ Shop-owner portal for the Vegz vegetable ordering platform. This is a separate r
 
 - Responsive web dashboard for laptop, tablet and mobile.
 - Shop-owner development sign-in; owner data is scoped to the signed-in shop.
-- Add, edit, hide, remove vegetables and update prices, units, descriptions and image URLs.
+- Add, edit, hide and remove vegetables or grocery items, update prices/stock, and upload up to three real product photos (JPG/PNG/WEBP, max 5 MB each).
 - Inventory tracking, including in-stock, low-stock, hidden and out-of-stock states.
 - Shop open/closed and accepting-orders controls.
 - Orders inbox with status transitions: placed -> accepted -> preparing -> ready -> out for delivery -> delivered. Cancellation is allowed before dispatch.
-- Dashboard metrics for catalog, stock, new/active orders and today's sales.
+- Public `/api/marketplace` catalog grouped by open shop; authenticated `/api/internal/orders` for the trusted customer-order service; dashboard metrics for catalog, stock, orders and sales.
 - FastAPI, SQLAlchemy and SQLite by default; MySQL-compatible via DATABASE_URL.
 - Dockerfile and GitHub Actions CI.
 
@@ -65,6 +65,9 @@ All shop-specific endpoints except health and development login require the Auth
 | POST | /api/auth/demo-login | Development-only owner sign-in |
 | GET/PATCH | /api/shop | Read/update shop profile and availability |
 | GET/POST | /api/products | List or add catalog items |
+| GET | /api/marketplace | Public catalog grouped by open shop |
+| POST | /api/internal/orders | Authenticated suborder from user service |
+| POST | /api/products/{id}/images | Upload up to 3 product images |
 | PATCH/DELETE | /api/products/{product_id} | Edit or remove an item |
 | GET | /api/orders | Shop orders, optionally filter by status_filter |
 | PATCH | /api/orders/{order_id}/status | Advance or cancel an order |
@@ -73,7 +76,7 @@ All shop-specific endpoints except health and development login require the Auth
 
 ## Important integration notes
 
-This is a shop-portal foundation and its starter database is separate from the vegz-user repository. The current order API stores shop-side orders independently so the owner dashboard can be developed and tested. Customer orders from vegz-user will not automatically appear here yet. Before real customer launch, both apps must use a shared order/catalog data model (or a secured server-to-server integration) and include a shop identifier per product/order. Do not simply point two independent schemas at the same database without migrations and ownership rules.
+This is a shop-portal foundation and its starter database is separate from the vegz-user repository. The current order API stores shop-side orders independently so the owner dashboard can be developed and tested. The integration contract is now available: `GET /api/marketplace` serves open shops and orderable products; `POST /api/internal/orders` accepts suborders only when `SHOP_INTERNAL_TOKEN` matches the user service's `SHOP_INTERNAL_TOKEN`. Configure the same strong secret in both apps. These services still use separate databases and must be deployed with reachable private service URLs; do not point the apps at the same database without reviewed migrations.
 
 Also required before production:
 
