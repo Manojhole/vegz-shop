@@ -374,7 +374,7 @@ def create_internal_order(
     db.add(order)
     db.commit()
     db.refresh(order)
-    return {**order_payload(order), "shop_id": shop.id, "shop_name": shop.name, "shop_address": shop.address,
+    return {**order_payload(order), "shop_id": shop.id, "shop_name": shop.name, "shop_phone": shop.owner_phone, "shop_address": shop.address,
             "items": summaries, "order_reference": payload.order_reference}
 
 
