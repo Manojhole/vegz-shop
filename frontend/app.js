@@ -28,8 +28,8 @@ function setBusy(button, busy, label = "Saving…") {
   if (busy) { button.dataset.original = button.textContent; button.disabled = true; button.textContent = label; }
   else { button.disabled = false; button.textContent = button.dataset.original || "Save"; }
 }
-async function login(phone, code) {
-  const result = await api("/api/auth/demo-login", { method: "POST", body: JSON.stringify({ phone, demo_code: code }) });
+async function login(phone, code, shopType) {
+  const result = await api("/api/auth/demo-login", { method: "POST", body: JSON.stringify({ phone, demo_code: code, shop_type: shopType }) });
   state.token = result.access_token; localStorage.setItem("vegzShopToken", state.token);
   state.shop = result.shop; $("#login-screen").classList.add("hidden"); $("#app-shell").classList.remove("hidden");
   await refreshAll(); showView("overview");
@@ -55,7 +55,7 @@ function renderAll() {
   $("#stat-new-orders").textContent = orders.filter(o => o.status === "placed").length;
   $("#stat-sales").textContent = money(orders.filter(o => o.status !== "cancelled" && o.created_at.slice(0,10) === new Date().toISOString().slice(0,10)).reduce((s,o) => s + Number(o.total_amount), 0));
   $("#tab-new-count").textContent = orders.filter(o => o.status === "placed").length;
-  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || "";
+  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type || "vegetable";
   $("#shop-open-toggle").checked = shop.is_open; $("#accept-orders-toggle").checked = shop.accepts_orders;
   $("#availability-note").textContent = shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
   $("#overview-orders").innerHTML = renderOrderRows(orders.filter(o => ["placed","accepted","preparing"].includes(o.status)).slice(0,4), true);
@@ -132,8 +132,8 @@ function showView(view) {
   $$(".view").forEach(el => el.classList.add("hidden"));
   $("#view-" + view).classList.remove("hidden");
   $$(".nav-item").forEach(el => el.classList.toggle("active", el.dataset.view === view));
-  const names = {overview:"Overview",products:"My vegetables",orders:"Orders",settings:"Shop settings"};
-  $("#breadcrumb-title").textContent = names[view]; $("#page-title").textContent = ({overview:"Good morning 👋",products:"Your vegetables 🥬",orders:"Manage orders 📦",settings:"Your shop settings ⚙"})[view];
+  const names = {overview:"Overview",products: state.shop?.shop_type === "grocery" ? "My groceries" : "My vegetables",orders:"Orders",settings:"Shop settings"};
+  $("#breadcrumb-title").textContent = names[view]; $("#page-title").textContent = ({overview:"Good morning 👋",products: state.shop?.shop_type === "grocery" ? "Your groceries 🛒" : "Your vegetables 🥬",orders:"Manage orders 📦",settings:"Your shop settings ⚙"})[view];
   $("#page-subtitle").textContent = ({overview:"Here's what's happening with your shop today.",products:"Keep prices, stock and availability accurate.",orders:"Accept orders and keep customers updated.",settings:"Control your shop profile and order availability."})[view];
   if (view === "orders") renderOrders();
   window.scrollTo({top:0,behavior:"smooth"});
@@ -143,7 +143,9 @@ function openProduct(product = null) {
   $("#product-id").value = product?.id || "";
   $("#product-dialog-title").textContent = product ? "Edit vegetable" : "Add vegetable";
   $("#product-name").value = product?.name || "";
-  $("#product-category").value = product?.category || "Daily essentials";
+  const allowedCategories = (state.shop?.shop_type || "vegetable") === "grocery" ? ["Grocery", "Spices"] : ["Daily essentials", "Fresh picks", "Leafy greens", "Root vegetables", "Seasonal", "Vegetables"];
+  $("#product-category").innerHTML = allowedCategories.map(category => `<option>${esc(category)}</option>`).join("");
+  $("#product-category").value = allowedCategories.includes(product?.category) ? product.category : allowedCategories[0];
   $("#product-unit").value = product?.unit || "kg";
   $("#product-price").value = product?.price ?? "";
   $("#product-stock").value = product?.stock_qty ?? 0;
@@ -173,7 +175,7 @@ async function updateShop(payload, button) {
 }
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault(); const button = event.submitter; setBusy(button,true,"Signing in…");
-  try { await login($("#phone").value.trim(),$("#demo-code").value.trim()); toast("Welcome to your shop!"); }
+  try { await login($("#phone").value.trim(),$("#demo-code").value.trim(),$("#shop-type").value); toast("Welcome to your shop!"); }
   catch (error) { toast(error.message,true); }
   finally { setBusy(button,false); }
 });
@@ -190,7 +192,7 @@ document.body.addEventListener("click", async e => {
   }
   const del = e.target.closest("[data-delete-product]"); if (del) {
     const p = state.products.find(p => p.id === Number(del.dataset.deleteProduct)); if (!p || !confirm("Remove " + p.name + " from your catalog?")) return;
-    try { await api(`/api/products/${p.id}`,{method:"DELETE"}); await refreshAll(); toast("Vegetable removed."); } catch(err){toast(err.message,true);} return;
+    try { await api(`/api/products/${p.id}`,{method:"DELETE"}); await refreshAll(); toast("Product removed."); } catch(err){toast(err.message,true);} return;
   }
   const quick = e.target.closest("[data-quick-stock]"); if (quick) {
     const p = state.products.find(p => p.id === Number(quick.dataset.quickStock)); if (!p) return;
@@ -241,7 +243,7 @@ $("#order-tabs").addEventListener("click", e => {
   $$("#order-tabs .tab").forEach(el => el.classList.toggle("active",el === btn)); renderOrders();
 });
 $("#shop-form").addEventListener("submit",async e=>{
-  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),address:$("#shop-address").value.trim()},e.submitter);
+  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),shop_type:$("#shop-type-setting").value,address:$("#shop-address").value.trim()},e.submitter);
 });
 $("#shop-open-toggle").addEventListener("change",async e=>{
   const input = e.target; input.disabled = true;
