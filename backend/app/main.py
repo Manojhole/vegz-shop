@@ -344,6 +344,14 @@ def create_internal_order(
     shop = db.get(Shop, payload.shop_id)
     if shop is None or not shop.is_open or not shop.accepts_orders:
         raise HTTPException(status_code=409, detail="This shop is not accepting orders.")
+    existing_order = db.scalar(select(ShopOrder).where(
+        ShopOrder.shop_id == shop.id, ShopOrder.note.like("%Reference: " + payload.order_reference + " |%")
+    ))
+    if existing_order is not None:
+        return {**order_payload(existing_order), "shop_id": shop.id, "shop_name": shop.name,
+                "shop_phone": shop.owner_phone, "shop_address": shop.address,
+                "order_reference": payload.order_reference}
+
     quantities: dict[int, int] = {}
     for item in payload.items:
         quantities[item.product_id] = quantities.get(item.product_id, 0) + item.quantity
