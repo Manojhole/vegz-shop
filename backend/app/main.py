@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import secrets
 import shutil
 import uuid
 from datetime import datetime, timedelta
@@ -126,6 +127,20 @@ class ShopPatch(BaseModel):
     address: str | None = Field(default=None, max_length=300)
     is_open: bool | None = None
     accepts_orders: bool | None = None
+
+
+class InternalOrderItem(BaseModel):
+    product_id: int
+    quantity: int = Field(ge=1, le=99)
+
+
+class InternalShopOrder(BaseModel):
+    shop_id: int
+    customer_name: str = Field(min_length=2, max_length=120)
+    customer_phone: str = Field(default="", max_length=20)
+    delivery_address: str = Field(min_length=4, max_length=400)
+    items: list[InternalOrderItem] = Field(min_length=1, max_length=60)
+    order_reference: str = Field(min_length=4, max_length=80)
 
 
 class OrderStatusPatch(BaseModel):
@@ -313,6 +328,54 @@ def delete_product(product_id: int, shop: Shop = Depends(current_shop), db: Sess
     db.delete(p)
     db.commit()
     return {"message": "Vegetable removed from your catalog."}
+
+
+@app.post("/api/internal/orders", status_code=201)
+def create_internal_order(
+    payload: InternalShopOrder,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Create a shop-owned suborder from the trusted customer-order service."""
+    expected = os.getenv("SHOP_INTERNAL_TOKEN", "")
+    supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
+    if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Internal order authentication failed.")
+    shop = db.get(Shop, payload.shop_id)
+    if shop is None or not shop.is_open or not shop.accepts_orders:
+        raise HTTPException(status_code=409, detail="This shop is not accepting orders.")
+    quantities: dict[int, int] = {}
+    for item in payload.items:
+        quantities[item.product_id] = quantities.get(item.product_id, 0) + item.quantity
+    products = {}
+    for product_id, quantity in quantities.items():
+        product = db.scalar(select(Product).where(
+            Product.id == product_id, Product.shop_id == shop.id,
+            Product.is_available.is_(True), Product.stock_qty >= quantity,
+        ).with_for_update())
+        if product is None:
+            raise HTTPException(status_code=409, detail="An item is unavailable or has insufficient stock.")
+        products[product_id] = product
+    total = Decimal("0.00")
+    summaries = []
+    for product_id, quantity in quantities.items():
+        product = products[product_id]
+        total += Decimal(str(product.price)) * quantity
+        summaries.append(f"{product.name} x{quantity}")
+    total = total.quantize(Decimal("0.01"))
+    order = ShopOrder(
+        shop_id=shop.id, customer_name=payload.customer_name,
+        customer_phone=payload.customer_phone, delivery_address=payload.delivery_address,
+        total_amount=total, status="placed",
+        note="Reference: " + payload.order_reference + " | Items: " + ", ".join(summaries),
+    )
+    for product_id, quantity in quantities.items():
+        products[product_id].stock_qty -= quantity
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    return {**order_payload(order), "shop_id": shop.id, "shop_name": shop.name, "shop_address": shop.address,
+            "items": summaries, "order_reference": payload.order_reference}
 
 
 @app.get("/api/orders")
