@@ -17,6 +17,8 @@
       <form id="login-form">
         <label for="phone">Owner mobile number</label>
         <input id="phone" type="tel" autocomplete="tel" placeholder="+91 98765 43210" required minlength="8">
+        <label for="shop-type">Shop type</label>
+        <select id="shop-type" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select>
         <label for="demo-code">Development access code</label>
         <input id="demo-code" inputmode="numeric" placeholder="Enter demo code" value="123456" required>
         <button class="btn primary full" type="submit">Open my shop <span>↗</span></button>
@@ -73,7 +75,7 @@
       <section id="view-settings" class="view hidden">
         <div class="settings-layout">
           <div class="settings-card"><div class="settings-card-head"><div><h2>Shop profile</h2><p>These details identify your shop on Vegz.</p></div><span class="settings-symbol">⌂</span></div>
-            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
+            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><label for="shop-type-setting">Shop type</label><select id="shop-type-setting" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select><p class="hint">Vegetable shops appear in Vegetables; grocery shops appear in Grocery in the Vegz User app.</p><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
           </div>
           <div class="settings-card"><div class="settings-card-head"><div><h2>Store availability</h2><p>Control when customers can place orders.</p></div><span class="settings-symbol">◷</span></div>
             <div class="setting-row"><div><strong>Shop is open</strong><p>Show customers that your store is currently operating.</p></div><label class="switch"><input type="checkbox" id="shop-open-toggle"><span class="slider"></span></label></div>
@@ -91,8 +93,8 @@
     <form id="product-form" method="dialog">
       <div class="modal-head"><div><span class="eyebrow">PRODUCT CATALOG</span><h2 id="product-dialog-title">Add product</h2><p>Add a new item or update an existing listing.</p></div><button type="button" class="close-btn" id="close-product-dialog" aria-label="Close">×</button></div>
       <input id="product-id" type="hidden">
-      <label for="product-name">Vegetable name *</label><input id="product-name" required maxlength="120" placeholder="e.g. Fresh tomatoes">
-      <div class="form-two"><div><label for="product-category">Category</label><select id="product-category"><option>Daily essentials</option><option>Fresh picks</option><option>Leafy greens</option><option>Root vegetables</option><option>Seasonal</option><option>Vegetables</option><option>Grocery</option><option>Spices</option></select></div><div><label for="product-unit">Selling unit *</label><select id="product-unit"><option value="kg">Kilogram (kg)</option><option value="g">Gram (g)</option><option value="bunch">Bunch</option><option value="pc">Piece</option><option value="packet">Packet</option><option value="dozen">Dozen</option></select></div></div>
+      <label for="product-name">Product name *</label><input id="product-name" required maxlength="120" placeholder="e.g. Fresh tomatoes or Toor Dal">
+      <div class="form-two"><div><label for="product-category">Product category</label><select id="product-category"></select></div><div><label for="product-unit">Selling unit *</label><select id="product-unit"><option value="kg">Kilogram (kg)</option><option value="g">Gram (g)</option><option value="bunch">Bunch</option><option value="pc">Piece</option><option value="packet">Packet</option><option value="dozen">Dozen</option></select></div></div>
       <div class="form-two"><div><label for="product-price">Price (₹) *</label><input id="product-price" type="number" min="0.01" step="0.01" required placeholder="0.00"></div><div><label for="product-stock">Stock quantity *</label><input id="product-stock" type="number" min="0" step="1" required placeholder="0"></div></div>
       <label for="product-images">Product photos (up to 3 real images)</label><input id="product-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><p class="hint">Upload up to 3 JPG, PNG or WEBP photos, max 5 MB each. New uploads replace the current photos.</p><div id="existing-product-images" class="product-image-preview" aria-live="polite"></div>
       <label for="product-description">Description (optional)</label><textarea id="product-description" rows="2" maxlength="300" placeholder="Quality, freshness or sourcing notes"></textarea>
