@@ -1,17 +1,21 @@
+import json
 import os
 import re
+import shutil
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, create_engine, select, desc
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy import inspect, text
 
 load_dotenv()
 APP_ENV = os.getenv("APP_ENV", "development").lower()
@@ -47,6 +51,7 @@ class Product(Base):
     category: Mapped[str] = mapped_column(String(60), default="Vegetables")
     description: Mapped[str] = mapped_column(String(300), default="")
     image_url: Mapped[str] = mapped_column(String(500), default="")
+    image_urls: Mapped[str] = mapped_column(Text, default="[]")
     unit: Mapped[str] = mapped_column(String(24), default="kg")
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
@@ -69,6 +74,11 @@ class ShopOrder(Base):
 
 
 Base.metadata.create_all(bind=engine)
+# Additive migration for existing SQLite/MySQL installations.
+with engine.begin() as connection:
+    columns = {column["name"] for column in inspect(engine).get_columns("products")}
+    if "image_urls" not in columns:
+        connection.execute(text("ALTER TABLE products ADD COLUMN image_urls TEXT NOT NULL DEFAULT '[]'"))
 
 app = FastAPI(title="Vegz Shop API", version="1.0.1", description="Shop-owner catalog, inventory, availability, and order operations.")
 app.add_middleware(
@@ -92,6 +102,7 @@ class ProductIn(BaseModel):
     category: str = Field(default="Vegetables", max_length=60)
     description: str = Field(default="", max_length=300)
     image_url: str = Field(default="", max_length=500)
+    image_urls: list[str] = Field(default_factory=list, max_length=3)
     unit: str = Field(default="kg", max_length=24)
     price: Decimal = Field(gt=0, le=100000)
     stock_qty: int = Field(default=0, ge=0, le=1000000)
@@ -103,6 +114,7 @@ class ProductPatch(BaseModel):
     category: str | None = Field(default=None, max_length=60)
     description: str | None = Field(default=None, max_length=300)
     image_url: str | None = Field(default=None, max_length=500)
+    image_urls: list[str] | None = Field(default=None, max_length=3)
     unit: str | None = Field(default=None, max_length=24)
     price: Decimal | None = Field(default=None, gt=0, le=100000)
     stock_qty: int | None = Field(default=None, ge=0, le=1000000)
@@ -132,8 +144,14 @@ def shop_payload(shop: Shop):
 
 
 def product_payload(p: Product):
-    return {"id": p.id, "name": p.name, "category": p.category, "description": p.description,
-            "image_url": p.image_url, "unit": p.unit, "price": float(p.price),
+    try:
+        images = json.loads(p.image_urls or "[]")
+    except (TypeError, ValueError):
+        images = []
+    if not images and p.image_url:
+        images = [p.image_url]
+    return {"id": p.id, "shop_id": p.shop_id, "name": p.name, "category": p.category, "description": p.description,
+            "image_url": p.image_url, "image_urls": images[:3], "unit": p.unit, "price": float(p.price),
             "stock_qty": p.stock_qty, "stock_state": "out_of_stock" if p.stock_qty <= 0 else "in_stock",
             "is_available": bool(p.is_available),
             "customer_can_order": bool(p.is_available and p.stock_qty > 0),
@@ -160,6 +178,24 @@ def current_shop(authorization: str | None = Header(default=None), db: Session =
     if shop is None:
         raise HTTPException(status_code=401, detail="Shop account not found.")
     return shop
+
+
+@app.get("/api/marketplace")
+def marketplace(db: Session = Depends(get_db)):
+    """Public customer catalog grouped by shop; only open shops and orderable products are shown."""
+    shops = db.scalars(select(Shop).where(Shop.is_open.is_(True), Shop.accepts_orders.is_(True)).order_by(Shop.name)).all()
+    result = []
+    for shop in shops:
+        items = db.scalars(select(Product).where(
+            Product.shop_id == shop.id, Product.is_available.is_(True), Product.stock_qty > 0
+        ).order_by(Product.category, Product.name)).all()
+        if not items:
+            continue
+        result.append({
+            "shop_id": shop.id, "shop_name": shop.name, "shop_address": shop.address,
+            "products": [product_payload(item) for item in items],
+        })
+    return result
 
 
 @app.get("/api/health")
@@ -208,7 +244,11 @@ def list_products(shop: Shop = Depends(current_shop), db: Session = Depends(get_
 
 @app.post("/api/products", status_code=201)
 def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
-    p = Product(shop_id=shop.id, **payload.model_dump())
+    data = payload.model_dump()
+    data["image_urls"] = json.dumps(data["image_urls"][:3])
+    if not data["image_url"] and data["image_urls"]:
+        data["image_url"] = data["image_urls"][0]
+    p = Product(shop_id=shop.id, **data)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -221,10 +261,48 @@ def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
     for key, value in payload.model_dump(exclude_unset=True).items():
+        if key == "image_urls":
+            value = json.dumps((value or [])[:3])
+            if value != "[]" and not payload.image_url:
+                p.image_url = json.loads(value)[0]
         setattr(p, key, value)
     db.commit()
     db.refresh(p)
     return product_payload(p)
+
+
+@app.post("/api/products/{product_id}/images")
+def upload_product_images(
+    product_id: int,
+    files: list[UploadFile] = File(...),
+    shop: Shop = Depends(current_shop),
+    db: Session = Depends(get_db),
+):
+    if not 1 <= len(files) <= 3:
+        raise HTTPException(status_code=400, detail="Upload between 1 and 3 product images.")
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    allowed = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    upload_dir = Path(__file__).resolve().parents[2] / "frontend" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    urls = []
+    for upload in files:
+        suffix = allowed.get(upload.content_type or "")
+        if not suffix:
+            raise HTTPException(status_code=415, detail="Use JPG, PNG or WEBP images.")
+        data = upload.file.read(5 * 1024 * 1024 + 1)
+        if len(data) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Each image must be 5 MB or smaller.")
+        filename = f"{uuid.uuid4().hex}{suffix}"
+        with (upload_dir / filename).open("wb") as image_file:
+            image_file.write(data)
+        urls.append(f"/uploads/{filename}")
+    product.image_urls = json.dumps(urls)
+    product.image_url = urls[0]
+    db.commit()
+    db.refresh(product)
+    return product_payload(product)
 
 
 @app.delete("/api/products/{product_id}")
