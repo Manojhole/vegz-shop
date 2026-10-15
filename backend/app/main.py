@@ -23,6 +23,8 @@ load_dotenv()
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vegz_shop.db")
 JWT_SECRET = os.getenv("JWT_SECRET", "local-dev-only-change-this-secret")
+PARTNER_ADMIN_TOKEN = os.getenv("PARTNER_ADMIN_TOKEN", "vegz-local-partner-token-change-before-production")
+ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://host.docker.internal:8000" if APP_ENV == "development" else "").rstrip("/")
 engine_kwargs = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
@@ -338,7 +340,7 @@ class AdminApprovalIn(BaseModel):
 
 @app.post("/api/internal/admin-approval")
 def admin_approval(payload: AdminApprovalIn, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    expected = os.getenv("PARTNER_ADMIN_TOKEN", "")
+    expected = PARTNER_ADMIN_TOKEN
     supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
     if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="Partner approval authentication failed.")
@@ -389,8 +391,8 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
             shop.city = normalized_city
             db.commit()
             db.refresh(shop)
-    admin_url = os.getenv("ADMIN_SERVICE_URL", "").rstrip("/")
-    admin_token = os.getenv("PARTNER_ADMIN_TOKEN", "")
+    admin_url = ADMIN_SERVICE_URL
+    admin_token = PARTNER_ADMIN_TOKEN
     if admin_url and len(admin_token) >= 32:
         try:
             response = httpx.post(admin_url + "/api/internal/partner-requests/shop", headers={"Authorization": "Bearer " + admin_token}, json={
