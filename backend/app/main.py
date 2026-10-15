@@ -227,12 +227,12 @@ def marketplace(city: str | None = None, db: Session = Depends(get_db)):
         city_type = (shop.city.strip().casefold(), shop.shop_type)
         if city_type in seen_city_types:
             continue
-        seen_city_types.add(city_type)
         items = db.scalars(select(Product).where(
             Product.shop_id == shop.id, Product.is_available.is_(True), Product.stock_qty > 0
         ).order_by(Product.category, Product.name)).all()
         if not items:
             continue
+        seen_city_types.add(city_type)
         result.append({
             "shop_id": shop.id, "shop_name": shop.name, "shop_type": shop.shop_type, "shop_address": shop.address,
             "products": [product_payload(item) for item in items],
