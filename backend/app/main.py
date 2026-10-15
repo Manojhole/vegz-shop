@@ -432,11 +432,11 @@ def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Sess
 
 @app.get("/api/catalog")
 def list_catalog(shop: Shop = Depends(current_shop)):
-    if shop.shop_type == "grocery":
-        allowed = {"Basmati Rice", "Toor Dal"}
-    else:
-        allowed = set(CATALOG) - {"Basmati Rice", "Toor Dal"}
-    return [{"name": name, "category": values[0], "description": values[1], "image_url": values[2], "unit": values[3]} for name, values in CATALOG.items() if name in allowed]
+    return [
+        {"name": name, "category": values[0], "description": values[1], "image_url": values[2], "unit": values[3]}
+        for name, values in CATALOG.items()
+        if (values[0] in {"Grocery", "Spices"}) == (shop.shop_type == "grocery")
+    ]
 
 
 @app.get("/api/products")
@@ -469,12 +469,19 @@ def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(
     changes = payload.model_dump(exclude_unset=True)
     if "name" in changes and changes["name"] != p.name:
         raise HTTPException(status_code=403, detail="Product identity is fixed by the Vegz catalog.")
+    catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[p.name]
+    changes.pop("name", None)
+    changes.pop("category", None)
+    changes.pop("description", None)
+    changes.pop("unit", None)
+    changes.pop("image_url", None)
     for key, value in changes.items():
         if key == "image_urls":
             value = json.dumps((value or [])[:3])
             if value != "[]" and not payload.image_url:
                 p.image_url = json.loads(value)[0]
         setattr(p, key, value)
+    p.category, p.description, p.unit, p.image_url = catalog_category, catalog_description, catalog_unit, catalog_image
     db.commit()
     db.refresh(p)
     return product_payload(p)
