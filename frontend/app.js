@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
-const state = { token: localStorage.getItem("vegzShopToken") || "", shop: null, products: [], orders: [], view: "overview", productFilter: "all", orderFilter: "all" };
+const state = { token: localStorage.getItem("vegzShopToken") || "", shop: null, products: [], orders: [], catalog: [], view: "overview", productFilter: "all", orderFilter: "all" };
 const API = "";
 const money = (value) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -40,9 +40,16 @@ function signOut(showToast = true) {
   if (showToast) toast("You have signed out.");
 }
 async function refreshAll() {
-  const [shop, products, orders] = await Promise.all([api("/api/shop"), api("/api/products"), api("/api/orders")]);
-  state.shop = shop; state.products = products; state.orders = orders;
+  const shop = await api("/api/shop");
+  state.shop = shop;
+  if (shop.approval_status === "approved") {
+    const [products, orders, catalog] = await Promise.all([api("/api/products"), api("/api/orders"), api("/api/catalog")]);
+    state.products = products; state.orders = orders; state.catalog = catalog;
+  } else {
+    state.products = []; state.orders = []; state.catalog = [];
+  }
   renderAll();
+  if (shop.approval_status !== "approved") toast("Registration submitted. Your shop is waiting for admin approval.");
 }
 function renderAll() {
   if (!state.shop) return;
@@ -142,16 +149,20 @@ function openProduct(product = null) {
   $("#product-form").reset();
   $("#product-id").value = product?.id || "";
   $("#product-dialog-title").textContent = product ? "Edit vegetable" : "Add vegetable";
-  $("#product-name").value = product?.name || "";
-  const allowedCategories = (state.shop?.shop_type || "vegetable") === "grocery" ? ["Grocery", "Spices"] : ["Daily essentials", "Fresh picks", "Leafy greens", "Root vegetables", "Seasonal", "Vegetables"];
+  const catalog = state.catalog || [];
+  $("#product-name").innerHTML = catalog.map(item => '<option value="' + esc(item.name) + '">' + esc(item.name) + '</option>').join("");
+  $("#product-name").value = product?.name || catalog[0]?.name || "";
+  $("#product-name").disabled = Boolean(product);
+  const chosen = catalog.find(item => item.name === $("#product-name").value);
+  const allowedCategories = [...new Set(catalog.map(item => item.category))];
   $("#product-category").innerHTML = allowedCategories.map(category => `<option>${esc(category)}</option>`).join("");
   $("#product-category").value = allowedCategories.includes(product?.category) ? product.category : allowedCategories[0];
-  $("#product-unit").value = product?.unit || "kg";
+  $("#product-unit").value = product?.unit || chosen?.unit || "kg";
   $("#product-price").value = product?.price ?? "";
   $("#product-stock").value = product?.stock_qty ?? 0;
   $("#product-out-of-stock").checked = (product?.stock_qty ?? 0) <= 0;
   $("#product-images").value = "";
-  const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : []);
+  const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : (chosen?.image_url ? [chosen.image_url] : []));
   $("#existing-product-images").innerHTML = imageList.map(url => '<img src="' + esc(url) + '" alt="Current product photo">').join("");
   $("#product-description").value = product?.description || "";
   $("#product-available").checked = product?.is_available ?? true;
@@ -226,7 +237,7 @@ $("#product-form").addEventListener("submit",async e=>{
   try {
     const saved = await api(id ? "/api/products/"+id : "/api/products",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});
     const photos = Array.from($("#product-images").files || []);
-    if (photos.length > 3) throw new Error("Choose no more than 3 photos.");
+    if (photos.length > 2) throw new Error("Choose no more than 2 additional photos; the built-in catalog image is included automatically.");
     if (photos.length) {
       const form = new FormData(); photos.forEach(file => form.append("files", file));
       const response = await fetch("/api/products/"+saved.id+"/images", {method:"POST",headers:{Authorization:"Bearer "+state.token},body:form});
