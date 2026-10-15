@@ -219,9 +219,15 @@ def marketplace(city: str | None = None, db: Session = Depends(get_db)):
     query = select(Shop).where(Shop.is_open.is_(True), Shop.accepts_orders.is_(True))
     if city and city.strip():
         query = query.where(Shop.city == city.strip().title())
-    shops = db.scalars(query.order_by(Shop.name)).all()
+    shops = db.scalars(query.order_by(Shop.id)).all()
     result = []
+    seen_city_types: set[tuple[str, str]] = set()
     for shop in shops:
+        # Protect the customer catalog from legacy duplicate accounts while keeping old data intact.
+        city_type = (shop.city.strip().casefold(), shop.shop_type)
+        if city_type in seen_city_types:
+            continue
+        seen_city_types.add(city_type)
         items = db.scalars(select(Product).where(
             Product.shop_id == shop.id, Product.is_available.is_(True), Product.stock_qty > 0
         ).order_by(Product.category, Product.name)).all()
