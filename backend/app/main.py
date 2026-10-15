@@ -24,6 +24,7 @@ APP_ENV = os.getenv("APP_ENV", "development").lower()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vegz_shop.db")
 JWT_SECRET = os.getenv("JWT_SECRET", "local-dev-only-change-this-secret")
 PARTNER_ADMIN_TOKEN = os.getenv("PARTNER_ADMIN_TOKEN", "vegz-local-partner-token-change-before-production")
+SHOP_INTERNAL_TOKEN = os.getenv("SHOP_INTERNAL_TOKEN", "vegz-local-shop-order-token-change-before-production" if APP_ENV == "development" else "")
 ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://host.docker.internal:8000" if APP_ENV == "development" else "").rstrip("/")
 if APP_ENV == "production" and (len(PARTNER_ADMIN_TOKEN) < 32 or "replace-with" in PARTNER_ADMIN_TOKEN.lower() or "change-before-production" in PARTNER_ADMIN_TOKEN or not ADMIN_SERVICE_URL):
     raise RuntimeError("Configure ADMIN_SERVICE_URL and a unique PARTNER_ADMIN_TOKEN before production.")
@@ -548,7 +549,7 @@ def create_internal_order(
     db: Session = Depends(get_db),
 ):
     """Create a shop-owned suborder from the trusted customer-order service."""
-    expected = os.getenv("SHOP_INTERNAL_TOKEN", "")
+    expected = SHOP_INTERNAL_TOKEN
     supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
     if len(expected) < 32 or "replace-with" in expected.lower() or not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="Internal order authentication failed.")
