@@ -66,12 +66,12 @@ function emptyInline(title, desc) { return `<div class="empty-state"><div>🧺</
 function statusPill(status) { return `<span class="status-pill status-${esc(status)}">${esc(status.replaceAll("_"," "))}</span>`; }
 function statusActions(order, compact) {
   const actions = {
-    placed: [["accepted","Accept order","primary"],["cancelled","Cancel","danger"]],
+    placed: [["accepted","Accept order","primary"],["rejected","Reject order","danger"],["cancelled","Cancel","danger"]],
     accepted: [["preparing","Start preparing","primary"],["cancelled","Cancel","danger"]],
     preparing: [["ready","Mark ready","primary"],["cancelled","Cancel","danger"]],
     ready: [["out_for_delivery","Out for delivery","primary"]],
     out_for_delivery: [["delivered","Mark delivered","primary"]],
-    delivered: [], cancelled: []
+    delivered: [], rejected: [], cancelled: []
   }[order.status] || [];
   return actions.map(([next,label,kind]) => `<button class="btn ${kind === "danger" ? "danger" : "primary"} ${compact ? "small" : ""}" data-order-action="${next}" data-order-id="${order.id}">${label}</button>`).join("");
 }
@@ -164,10 +164,12 @@ async function withButton(button, task) {
   finally { setBusy(button,false); }
 }
 async function changeOrderStatus(orderId, next, button) {
-  const labels = {accepted:"Accept this order?",cancelled:"Cancel this order?",preparing:"Start preparing this order?",ready:"Mark this order ready?",out_for_delivery:"Mark this order out for delivery?",delivered:"Mark this order delivered?"};
+  const labels = {accepted:"Accept this order?",rejected:"Reject this order?",cancelled:"Cancel this order?",preparing:"Start preparing this order?",ready:"Mark this order ready?",out_for_delivery:"Mark this order out for delivery?",delivered:"Mark this order delivered?"};
   if (next === "cancelled" && !confirm("Cancel order #" + orderId + "? This action cannot be undone.")) return;
+  const reason = next === "rejected" ? prompt("Why are you rejecting this order? This reason will be saved for customer support.") : "";
+  if (next === "rejected" && !reason?.trim()) { toast("A rejection reason is required.", true); return; }
   await withButton(button, async () => {
-    await api(`/api/orders/${orderId}/status`, {method:"PATCH",body:JSON.stringify({status:next})});
+    await api(`/api/orders/${orderId}/status`, {method:"PATCH",body:JSON.stringify({status:next,reason:reason||""})});
     await refreshAll(); toast(labels[next] ? "Order updated: " + next.replaceAll("_"," ") + "." : "Order updated.");
   });
 }
