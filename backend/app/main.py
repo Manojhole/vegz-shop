@@ -525,7 +525,7 @@ def upload_product_images(
         urls.append(f"/uploads/{filename}")
     base_image = CATALOG.get(product.name, ("", "", product.image_url, ""))[2]
     product.image_url = base_image
-    product.image_urls = json.dumps([base_image] + [url for url in urls if url != base_image][:2])
+    product.image_urls = json.dumps(([base_image] if base_image else []) + [url for url in urls if url != base_image][:2])
     db.commit()
     db.refresh(product)
     return product_payload(product)
