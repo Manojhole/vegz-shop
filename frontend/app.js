@@ -253,6 +253,13 @@ $("#product-form").addEventListener("submit",async e=>{
   catch(err){toast(err.message,true);}
   finally{setBusy(button,false);}
 });
+$("#product-name").addEventListener("change", () => {
+  const item = (state.catalog || []).find(x => x.name === $("#product-name").value);
+  if (!item) return;
+  $("#product-category").value = item.category;
+  $("#product-unit").value = item.unit;
+  $("#existing-product-images").innerHTML = item.image_url ? '<img src="' + esc(item.image_url) + '" alt="Built-in Vegz catalog image">' : '<span class="veg-icon">' + vegEmoji(item.name) + '</span>';
+});
 $("#product-out-of-stock").addEventListener("change", e => { if (e.target.checked) $("#product-stock").value = "0"; });
 $("#product-stock").addEventListener("input", e => { if (Number(e.target.value) > 0) $("#product-out-of-stock").checked = false; else if (e.target.value === "0") $("#product-out-of-stock").checked = true; });
 $("#product-search").addEventListener("input",renderProducts);
