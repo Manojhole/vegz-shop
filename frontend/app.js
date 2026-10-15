@@ -248,7 +248,7 @@ $("#order-tabs").addEventListener("click", e => {
   $$("#order-tabs .tab").forEach(el => el.classList.toggle("active",el === btn)); renderOrders();
 });
 $("#shop-form").addEventListener("submit",async e=>{
-  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),shop_type:$("#shop-type-setting").value,city:$("#shop-city-setting").value,address:$("#shop-address").value.trim()},e.submitter);
+  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),address:$("#shop-address").value.trim()},e.submitter);
 });
 $("#shop-open-toggle").addEventListener("change",async e=>{
   const input = e.target; input.disabled = true;
