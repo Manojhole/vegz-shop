@@ -40,6 +40,7 @@ class Shop(Base):
     name: Mapped[str] = mapped_column(String(120), default="My Vegz Shop")
     shop_type: Mapped[str] = mapped_column(String(20), default="vegetable", index=True)
     address: Mapped[str] = mapped_column(String(300), default="")
+    city: Mapped[str] = mapped_column(String(100), default="Hubli", index=True)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     accepts_orders: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -84,6 +85,8 @@ with engine.begin() as connection:
     shop_columns = {column["name"] for column in inspect(engine).get_columns("shops")}
     if "shop_type" not in shop_columns:
         connection.execute(text("ALTER TABLE shops ADD COLUMN shop_type VARCHAR(20) NOT NULL DEFAULT 'vegetable'"))
+    if "city" not in shop_columns:
+        connection.execute(text("ALTER TABLE shops ADD COLUMN city VARCHAR(100) NOT NULL DEFAULT 'Hubli'"))
 
 app = FastAPI(title="Vegz Shop API", version="1.0.1", description="Shop-owner catalog, inventory, availability, and order operations.")
 app.add_middleware(
@@ -130,6 +133,7 @@ class ShopPatch(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
     shop_type: str | None = Field(default=None, pattern=r"^(vegetable|grocery)$")
     address: str | None = Field(default=None, max_length=300)
+    city: str | None = Field(default=None, min_length=2, max_length=100)
     is_open: bool | None = None
     accepts_orders: bool | None = None
 
@@ -155,12 +159,13 @@ class OrderStatusPatch(BaseModel):
 class DemoLogin(BaseModel):
     phone: str = Field(min_length=8, max_length=20)
     shop_type: str = Field(default="vegetable", pattern=r"^(vegetable|grocery)$")
+    city: str = Field(default="Hubli", min_length=2, max_length=100)
     demo_code: str = Field(min_length=4, max_length=10)
 
 
 def shop_payload(shop: Shop):
     return {"id": shop.id, "owner_phone": shop.owner_phone, "name": shop.name, "shop_type": shop.shop_type, "address": shop.address,
-            "is_open": shop.is_open, "accepts_orders": shop.accepts_orders,
+            "city": shop.city, "is_open": shop.is_open, "accepts_orders": shop.accepts_orders,
             "created_at": shop.created_at.isoformat() + "Z"}
 
 
@@ -202,9 +207,12 @@ def current_shop(authorization: str | None = Header(default=None), db: Session =
 
 
 @app.get("/api/marketplace")
-def marketplace(db: Session = Depends(get_db)):
-    """Public customer catalog grouped by shop; only open shops and orderable products are shown."""
-    shops = db.scalars(select(Shop).where(Shop.is_open.is_(True), Shop.accepts_orders.is_(True)).order_by(Shop.name)).all()
+def marketplace(city: str | None = None, db: Session = Depends(get_db)):
+    """Public catalog for the requested delivery city; only orderable shops/products are shown."""
+    query = select(Shop).where(Shop.is_open.is_(True), Shop.accepts_orders.is_(True))
+    if city and city.strip():
+        query = query.where(Shop.city == city.strip().title())
+    shops = db.scalars(query.order_by(Shop.name)).all()
     result = []
     for shop in shops:
         items = db.scalars(select(Product).where(
@@ -234,12 +242,24 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Enter a valid owner mobile number.")
     if payload.demo_code != os.getenv("SHOP_DEMO_CODE", "123456"):
         raise HTTPException(status_code=400, detail="Invalid development code. Use the configured demo code.")
+    normalized_city = " ".join(payload.city.split()).title()
     shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
     if shop is None:
-        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type)
+        duplicate = db.scalar(select(Shop).where(Shop.city == normalized_city, Shop.shop_type == payload.shop_type))
+        if duplicate is not None:
+            raise HTTPException(status_code=409, detail=f"A {payload.shop_type} shop is already registered in {normalized_city}. Vegz allows only one shop of each type per city.")
+        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type, city=normalized_city)
         db.add(shop)
         db.commit()
         db.refresh(shop)
+    else:
+        if not shop.city:
+            duplicate = db.scalar(select(Shop).where(Shop.id != shop.id, Shop.city == normalized_city, Shop.shop_type == shop.shop_type))
+            if duplicate is not None:
+                raise HTTPException(status_code=409, detail=f"A {shop.shop_type} shop is already registered in {normalized_city}.")
+            shop.city = normalized_city
+            db.commit()
+            db.refresh(shop)
     token = jwt.encode({"shop_id": shop.id, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm="HS256")
     return {"access_token": token, "token_type": "bearer", "shop": shop_payload(shop)}
 
@@ -251,8 +271,15 @@ def get_shop(shop: Shop = Depends(current_shop)):
 
 @app.patch("/api/shop")
 def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
-    for key, value in payload.model_dump(exclude_unset=True).items():
-        setattr(shop, key, value)
+    changes = payload.model_dump(exclude_unset=True)
+    target_city = " ".join((changes.get("city") or shop.city).split()).title()
+    target_type = changes.get("shop_type") or shop.shop_type
+    if "city" in changes or "shop_type" in changes:
+        duplicate = db.scalar(select(Shop).where(Shop.id != shop.id, Shop.city == target_city, Shop.shop_type == target_type))
+        if duplicate is not None:
+            raise HTTPException(status_code=409, detail=f"A {target_type} shop is already registered in {target_city}. Vegz allows only one shop of each type per city.")
+    for key, value in changes.items():
+        setattr(shop, key, target_city if key == "city" else value)
     db.commit()
     db.refresh(shop)
     return shop_payload(shop)
