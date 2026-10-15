@@ -10,6 +10,7 @@ os.environ["APP_ENV"] = "development"
 os.environ["JWT_SECRET"] = "test-secret-that-is-long-enough-for-test-only"
 os.environ["SHOP_DEMO_CODE"] = "123456"
 os.environ["PARTNER_ADMIN_TOKEN"] = "test-partner-admin-token-that-is-long-enough"
+os.environ["ADMIN_SERVICE_URL"] = ""
 
 from fastapi.testclient import TestClient
 from backend.app.main import app
@@ -41,6 +42,12 @@ class ShopApiTests(unittest.TestCase):
         self.assertEqual(changed.json()["stock_state"], "out_of_stock")
         deleted = client.delete(f"/api/products/{product['id']}", headers=self.headers)
         self.assertEqual(deleted.status_code, 200)
+
+    def test_shop_type_and_city_are_registration_only(self):
+        city_change = client.patch("/api/shop", headers=self.headers, json={"city": "Dharwad"})
+        self.assertEqual(city_change.status_code, 403)
+        type_change = client.patch("/api/shop", headers=self.headers, json={"shop_type": "grocery"})
+        self.assertEqual(type_change.status_code, 403)
 
     def test_shop_availability_settings(self):
         response = client.patch("/api/shop", headers=self.headers, json={"is_open": False, "accepts_orders": False})
