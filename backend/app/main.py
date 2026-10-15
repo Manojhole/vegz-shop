@@ -241,7 +241,7 @@ def require_approved_shop(shop: Shop = Depends(current_shop)) -> Shop:
 @app.get("/api/marketplace")
 def marketplace(city: str | None = None, db: Session = Depends(get_db)):
     """Public catalog for the requested delivery city; only orderable shops/products are shown."""
-    query = select(Shop).where(Shop.is_open.is_(True), Shop.accepts_orders.is_(True))
+    query = select(Shop).where(Shop.approval_status == "approved", Shop.is_open.is_(True), Shop.accepts_orders.is_(True))
     if city and city.strip():
         query = query.where(Shop.city == city.strip().title())
     shops = db.scalars(query.order_by(Shop.id)).all()
@@ -421,8 +421,8 @@ def upload_product_images(
     shop: Shop = Depends(require_approved_shop),
     db: Session = Depends(get_db),
 ):
-    if not 1 <= len(files) <= 3:
-        raise HTTPException(status_code=400, detail="Upload between 1 and 3 product images.")
+    if not 1 <= len(files) <= 2:
+        raise HTTPException(status_code=400, detail="Upload one or two additional product images.")
     product = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found.")
