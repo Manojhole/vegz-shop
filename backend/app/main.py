@@ -458,7 +458,7 @@ def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_sho
     data = payload.model_dump()
     catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[payload.name]
     data["category"], data["description"], data["image_url"], data["unit"] = catalog_category, catalog_description, catalog_image, catalog_unit
-    data["image_urls"] = json.dumps([catalog_image] + [u for u in data["image_urls"] if u and u != catalog_image][:2])
+    data["image_urls"] = json.dumps(([catalog_image] if catalog_image else []) + [u for u in data["image_urls"] if u and u != catalog_image][:2])
     if not data["image_url"] and data["image_urls"]:
         data["image_url"] = data["image_urls"][0]
     p = Product(shop_id=shop.id, **data)
