@@ -286,8 +286,12 @@ def get_shop(shop: Shop = Depends(current_shop)):
 @app.patch("/api/shop")
 def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     changes = payload.model_dump(exclude_unset=True)
-    target_city = " ".join((changes.get("city") or shop.city).split()).title()
-    target_type = changes.get("shop_type") or shop.shop_type
+    if "city" in changes and " ".join(changes["city"].split()).title() != shop.city:
+        raise HTTPException(status_code=403, detail="Shop city is fixed at registration. Contact Vegz support if it was entered incorrectly.")
+    if "shop_type" in changes and changes["shop_type"] != shop.shop_type:
+        raise HTTPException(status_code=403, detail="Shop type is fixed at registration. Contact Vegz support if it was entered incorrectly.")
+    target_city = shop.city
+    target_type = shop.shop_type
     if "city" in changes or "shop_type" in changes:
         duplicate = db.scalar(select(Shop).where(Shop.id != shop.id, Shop.city == target_city, Shop.shop_type == target_type))
         if duplicate is not None:
