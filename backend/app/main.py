@@ -48,6 +48,21 @@ class Shop(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+CATALOG = {
+    "Tomato": ("Daily essentials", "Juicy, ripe tomatoes for everyday cooking.", "https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Potato": ("Daily essentials", "Fresh everyday potatoes, sorted with care.", "https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Red Onion": ("Daily essentials", "Kitchen-ready red onions with a bold flavour.", "https://images.unsplash.com/photo-1508747703725-719777637510?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Carrot": ("Fresh picks", "Crunchy carrots, full of colour and freshness.", "https://images.unsplash.com/photo-1445282768818-728615cc910a?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Spinach": ("Leafy greens", "Tender green leaves, great for dals and curries.", "https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=crop&w=700&q=85", "bunch"),
+    "Broccoli": ("Fresh picks", "Fresh green florets for colourful meals.", "https://images.unsplash.com/photo-1459411621453-7b03977f4bfc?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Cabbage": ("Fresh picks", "Firm, crisp cabbage for everyday cooking.", "https://images.unsplash.com/photo-1594282486552-05f4d1e3d3c9?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Green Capsicum": ("Fresh picks", "Bright green capsicum with a crisp bite.", "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Cucumber": ("Fresh picks", "Crisp cucumbers for salads.", "https://images.unsplash.com/photo-1604977042946-1eecc30f269e?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Cauliflower": ("Fresh picks", "Fresh florets for curries.", "https://images.unsplash.com/photo-1568584711075-3d021a7c3ca3?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Basmati Rice": ("Grocery", "Everyday pantry rice.", "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Toor Dal": ("Grocery", "Staple lentils for everyday meals.", "https://images.unsplash.com/photo-1515543904379-3d757myf4?auto=format&fit=crop&w=700&q=85", "kg"),
+}
+
 class Product(Base):
     __tablename__ = "products"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -349,6 +364,15 @@ def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Sess
     return shop_payload(shop)
 
 
+@app.get("/api/catalog")
+def list_catalog(shop: Shop = Depends(current_shop)):
+    if shop.shop_type == "grocery":
+        allowed = {"Basmati Rice", "Toor Dal"}
+    else:
+        allowed = set(CATALOG) - {"Basmati Rice", "Toor Dal"}
+    return [{"name": name, "category": values[0], "description": values[1], "image_url": values[2], "unit": values[3]} for name, values in CATALOG.items() if name in allowed]
+
+
 @app.get("/api/products")
 def list_products(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     return [product_payload(p) for p in db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()]
@@ -356,8 +380,12 @@ def list_products(shop: Shop = Depends(require_approved_shop), db: Session = Dep
 
 @app.post("/api/products", status_code=201)
 def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
+    if payload.name not in CATALOG:
+        raise HTTPException(status_code=422, detail="Choose an item from the Vegz catalog.")
     data = payload.model_dump()
-    data["image_urls"] = json.dumps(data["image_urls"][:3])
+    catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[payload.name]
+    data["category"], data["description"], data["image_url"], data["unit"] = catalog_category, catalog_description, catalog_image, catalog_unit
+    data["image_urls"] = json.dumps([catalog_image] + [u for u in data["image_urls"] if u and u != catalog_image][:2])
     if not data["image_url"] and data["image_urls"]:
         data["image_url"] = data["image_urls"][0]
     p = Product(shop_id=shop.id, **data)
@@ -372,7 +400,10 @@ def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(
     p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "name" in changes and changes["name"] != p.name:
+        raise HTTPException(status_code=403, detail="Product identity is fixed by the Vegz catalog.")
+    for key, value in changes.items():
         if key == "image_urls":
             value = json.dumps((value or [])[:3])
             if value != "[]" and not payload.image_url:
@@ -410,8 +441,9 @@ def upload_product_images(
         with (upload_dir / filename).open("wb") as image_file:
             image_file.write(data)
         urls.append(f"/uploads/{filename}")
-    product.image_urls = json.dumps(urls)
-    product.image_url = urls[0]
+    base_image = CATALOG.get(product.name, ("", "", product.image_url, ""))[2]
+    product.image_url = base_image
+    product.image_urls = json.dumps([base_image] + [url for url in urls if url != base_image][:2])
     db.commit()
     db.refresh(product)
     return product_payload(product)
