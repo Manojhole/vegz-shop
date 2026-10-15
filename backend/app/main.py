@@ -4,6 +4,7 @@ import re
 import secrets
 import shutil
 import uuid
+import httpx
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -42,7 +43,8 @@ class Shop(Base):
     address: Mapped[str] = mapped_column(String(300), default="")
     city: Mapped[str] = mapped_column(String(100), default="Hubli", index=True)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
-    accepts_orders: Mapped[bool] = mapped_column(Boolean, default=True)
+    accepts_orders: Mapped[bool] = mapped_column(Boolean, default=False)
+    approval_status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -87,6 +89,8 @@ with engine.begin() as connection:
         connection.execute(text("ALTER TABLE shops ADD COLUMN shop_type VARCHAR(20) NOT NULL DEFAULT 'vegetable'"))
     if "city" not in shop_columns:
         connection.execute(text("ALTER TABLE shops ADD COLUMN city VARCHAR(100) NOT NULL DEFAULT 'Hubli'"))
+    if "approval_status" not in shop_columns:
+        connection.execute(text("ALTER TABLE shops ADD COLUMN approval_status VARCHAR(24) NOT NULL DEFAULT 'pending'"))
     duplicate_city_types = connection.execute(text(
         "SELECT city, shop_type FROM shops GROUP BY city, shop_type HAVING COUNT(*) > 1"
     )).fetchall()
@@ -173,7 +177,7 @@ class DemoLogin(BaseModel):
 
 def shop_payload(shop: Shop):
     return {"id": shop.id, "owner_phone": shop.owner_phone, "name": shop.name, "shop_type": shop.shop_type, "address": shop.address,
-            "city": shop.city, "is_open": shop.is_open, "accepts_orders": shop.accepts_orders,
+            "city": shop.city, "is_open": shop.is_open, "accepts_orders": shop.accepts_orders, "approval_status": shop.approval_status,
             "created_at": shop.created_at.isoformat() + "Z"}
 
 
@@ -211,6 +215,8 @@ def current_shop(authorization: str | None = Header(default=None), db: Session =
     shop = db.get(Shop, shop_id)
     if shop is None:
         raise HTTPException(status_code=401, detail="Shop account not found.")
+    if shop.approval_status != "approved":
+        raise HTTPException(status_code=403, detail="Your shop registration is awaiting admin approval.")
     return shop
 
 
@@ -262,7 +268,7 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
         duplicate = db.scalar(select(Shop).where(Shop.city == normalized_city, Shop.shop_type == payload.shop_type))
         if duplicate is not None:
             raise HTTPException(status_code=409, detail=f"A {payload.shop_type} shop is already registered in {normalized_city}. Vegz allows only one shop of each type per city.")
-        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type, city=normalized_city)
+        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type, city=normalized_city, approval_status="pending", is_open=False, accepts_orders=False)
         db.add(shop)
         db.commit()
         db.refresh(shop)
@@ -274,6 +280,18 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
             shop.city = normalized_city
             db.commit()
             db.refresh(shop)
+    admin_url = os.getenv("ADMIN_SERVICE_URL", "").rstrip("/")
+    admin_token = os.getenv("PARTNER_ADMIN_TOKEN", "")
+    if admin_url and len(admin_token) >= 32:
+        try:
+            response = httpx.post(admin_url + "/api/internal/partner-requests/shop", headers={"Authorization": "Bearer " + admin_token}, json={
+                "name": shop.name, "owner_name": "", "phone": shop.owner_phone, "city": shop.city,
+                "shop_type": shop.shop_type, "address": shop.address, "external_ref": str(shop.id)
+            }, timeout=5.0)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            if APP_ENV == "production":
+                raise HTTPException(status_code=503, detail="Could not submit shop registration for admin review.")
     token = jwt.encode({"shop_id": shop.id, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm="HS256")
     return {"access_token": token, "token_type": "bearer", "shop": shop_payload(shop)}
 
