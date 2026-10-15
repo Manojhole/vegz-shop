@@ -413,6 +413,8 @@ def get_shop(shop: Shop = Depends(current_shop)):
 @app.patch("/api/shop")
 def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     changes = payload.model_dump(exclude_unset=True)
+    if shop.approval_status != "approved" and (changes.get("is_open") is True or changes.get("accepts_orders") is True):
+        raise HTTPException(status_code=403, detail="Shop availability can be enabled only after admin approval.")
     if "city" in changes and " ".join(changes["city"].split()).title() != shop.city:
         raise HTTPException(status_code=403, detail="Shop city is fixed at registration. Contact Vegz support if it was entered incorrectly.")
     if "shop_type" in changes and changes["shop_type"] != shop.shop_type:
