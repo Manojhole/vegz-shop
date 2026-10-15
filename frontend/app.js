@@ -28,8 +28,8 @@ function setBusy(button, busy, label = "Saving…") {
   if (busy) { button.dataset.original = button.textContent; button.disabled = true; button.textContent = label; }
   else { button.disabled = false; button.textContent = button.dataset.original || "Save"; }
 }
-async function login(phone, code, shopType) {
-  const result = await api("/api/auth/demo-login", { method: "POST", body: JSON.stringify({ phone, demo_code: code, shop_type: shopType }) });
+async function login(phone, code, shopType, city) {
+  const result = await api("/api/auth/demo-login", { method: "POST", body: JSON.stringify({ phone, demo_code: code, shop_type: shopType, city }) });
   state.token = result.access_token; localStorage.setItem("vegzShopToken", state.token);
   state.shop = result.shop; $("#login-screen").classList.add("hidden"); $("#app-shell").classList.remove("hidden");
   await refreshAll(); showView("overview");
@@ -55,7 +55,7 @@ function renderAll() {
   $("#stat-new-orders").textContent = orders.filter(o => o.status === "placed").length;
   $("#stat-sales").textContent = money(orders.filter(o => o.status !== "cancelled" && o.created_at.slice(0,10) === new Date().toISOString().slice(0,10)).reduce((s,o) => s + Number(o.total_amount), 0));
   $("#tab-new-count").textContent = orders.filter(o => o.status === "placed").length;
-  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type || "vegetable";
+  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type || "vegetable"; $("#shop-city-setting").value = shop.city || "Hubli";
   $("#shop-open-toggle").checked = shop.is_open; $("#accept-orders-toggle").checked = shop.accepts_orders;
   $("#availability-note").textContent = shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
   $("#overview-orders").innerHTML = renderOrderRows(orders.filter(o => ["placed","accepted","preparing"].includes(o.status)).slice(0,4), true);
@@ -176,7 +176,7 @@ async function updateShop(payload, button) {
 }
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault(); const button = event.submitter; setBusy(button,true,"Signing in…");
-  try { await login($("#phone").value.trim(),$("#demo-code").value.trim(),$("#shop-type").value); toast("Welcome to your shop!"); }
+  try { await login($("#phone").value.trim(),$("#demo-code").value.trim(),$("#shop-type").value,$("#shop-city").value); toast("Welcome to your shop!"); }
   catch (error) { toast(error.message,true); }
   finally { setBusy(button,false); }
 });
@@ -246,7 +246,7 @@ $("#order-tabs").addEventListener("click", e => {
   $$("#order-tabs .tab").forEach(el => el.classList.toggle("active",el === btn)); renderOrders();
 });
 $("#shop-form").addEventListener("submit",async e=>{
-  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),shop_type:$("#shop-type-setting").value,address:$("#shop-address").value.trim()},e.submitter);
+  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),shop_type:$("#shop-type-setting").value,city:$("#shop-city-setting").value,address:$("#shop-address").value.trim()},e.submitter);
 });
 $("#shop-open-toggle").addEventListener("change",async e=>{
   const input = e.target; input.disabled = true;
