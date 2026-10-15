@@ -55,7 +55,7 @@ function renderAll() {
   $("#stat-new-orders").textContent = orders.filter(o => o.status === "placed").length;
   $("#stat-sales").textContent = money(orders.filter(o => o.status !== "cancelled" && o.created_at.slice(0,10) === new Date().toISOString().slice(0,10)).reduce((s,o) => s + Number(o.total_amount), 0));
   $("#tab-new-count").textContent = orders.filter(o => o.status === "placed").length;
-  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type || "vegetable"; $("#shop-city-setting").value = shop.city || "Hubli";
+  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type === "grocery" ? "Grocery shop" : "Vegetable shop"; $("#shop-city-setting").value = shop.city || "Hubli";
   $("#shop-open-toggle").checked = shop.is_open; $("#accept-orders-toggle").checked = shop.accepts_orders;
   $("#availability-note").textContent = shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
   $("#overview-orders").innerHTML = renderOrderRows(orders.filter(o => ["placed","accepted","preparing"].includes(o.status)).slice(0,4), true);
