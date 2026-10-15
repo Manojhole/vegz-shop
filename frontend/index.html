@@ -19,6 +19,9 @@
         <input id="phone" type="tel" autocomplete="tel" placeholder="+91 98765 43210" required minlength="8">
         <label for="shop-type">Shop type</label>
         <select id="shop-type" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select>
+        <label for="shop-city">City</label>
+        <select id="shop-city" required><option value="Hubli">Hubli</option><option value="Dharwad">Dharwad</option></select>
+        <p class="hint">Vegz allows one vegetable shop and one grocery shop in each city.</p>
         <label for="demo-code">Development access code</label>
         <input id="demo-code" inputmode="numeric" placeholder="Enter demo code" value="123456" required>
         <button class="btn primary full" type="submit">Open my shop <span>↗</span></button>
@@ -75,7 +78,7 @@
       <section id="view-settings" class="view hidden">
         <div class="settings-layout">
           <div class="settings-card"><div class="settings-card-head"><div><h2>Shop profile</h2><p>These details identify your shop on Vegz.</p></div><span class="settings-symbol">⌂</span></div>
-            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><label for="shop-type-setting">Shop type</label><select id="shop-type-setting" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select><p class="hint">Vegetable shops appear in Vegetables; grocery shops appear in Grocery in the Vegz User app.</p><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
+            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><label for="shop-type-setting">Shop type</label><select id="shop-type-setting" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select><label for="shop-city-setting">City</label><select id="shop-city-setting" required><option value="Hubli">Hubli</option><option value="Dharwad">Dharwad</option></select><p class="hint">One vegetable shop and one grocery shop are allowed per city.</p><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
           </div>
           <div class="settings-card"><div class="settings-card-head"><div><h2>Store availability</h2><p>Control when customers can place orders.</p></div><span class="settings-symbol">◷</span></div>
             <div class="setting-row"><div><strong>Shop is open</strong><p>Show customers that your store is currently operating.</p></div><label class="switch"><input type="checkbox" id="shop-open-toggle"><span class="slider"></span></label></div>
