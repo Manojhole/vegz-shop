@@ -344,7 +344,7 @@ def admin_approval(payload: AdminApprovalIn, authorization: str | None = Header(
     supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
     if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="Partner approval authentication failed.")
-    digits = re.sub(r"\\D", "", payload.phone)
+    digits = re.sub(r"\D", "", payload.phone)
     phone = "+91" + digits[-10:] if len(digits) >= 10 and (len(digits) == 10 or digits.startswith("91")) else re.sub(r"[^0-9+]", "", payload.phone)
     shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
     if shop is None:
@@ -368,8 +368,11 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
     """Development-only sign-in; replace with SMS OTP/approved identity provider in production."""
     if APP_ENV == "production":
         raise HTTPException(status_code=503, detail="Configure the production identity provider before enabling shop-owner sign-in.")
-    phone = re.sub(r"[^0-9+]", "", payload.phone)
-    if len(re.sub(r"\D", "", phone)) < 8:
+    digits = re.sub(r"\D", "", payload.phone)
+    if len(digits) >= 12 and digits.startswith("91"):
+        digits = digits[-10:]
+    phone = "+91" + digits if len(digits) == 10 else "+" + digits if len(digits) >= 8 else ""
+    if len(digits) < 8:
         raise HTTPException(status_code=400, detail="Enter a valid owner mobile number.")
     if payload.demo_code != os.getenv("SHOP_DEMO_CODE", "123456"):
         raise HTTPException(status_code=400, detail="Invalid development code. Use the configured demo code.")
