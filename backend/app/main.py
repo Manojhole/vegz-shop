@@ -250,6 +250,31 @@ def marketplace(city: str | None = None, db: Session = Depends(get_db)):
     return result
 
 
+class AdminApprovalIn(BaseModel):
+    phone: str = Field(min_length=8, max_length=24)
+    status: str = Field(pattern=r"^(approved|rejected|suspended|pending)$")
+
+
+@app.post("/api/internal/admin-approval")
+def admin_approval(payload: AdminApprovalIn, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    expected = os.getenv("PARTNER_ADMIN_TOKEN", "")
+    supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
+    if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Partner approval authentication failed.")
+    digits = re.sub(r"\\D", "", payload.phone)
+    phone = "+91" + digits[-10:] if len(digits) >= 10 and (len(digits) == 10 or digits.startswith("91")) else re.sub(r"[^0-9+]", "", payload.phone)
+    shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
+    if shop is None:
+        raise HTTPException(status_code=404, detail="Shop registration not found.")
+    shop.approval_status = payload.status
+    if payload.status != "approved":
+        shop.is_open = False
+        shop.accepts_orders = False
+    db.commit()
+    db.refresh(shop)
+    return shop_payload(shop)
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "vegz-shop-api"}
