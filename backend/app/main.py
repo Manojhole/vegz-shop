@@ -25,6 +25,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vegz_shop.db")
 JWT_SECRET = os.getenv("JWT_SECRET", "local-dev-only-change-this-secret")
 PARTNER_ADMIN_TOKEN = os.getenv("PARTNER_ADMIN_TOKEN", "vegz-local-partner-token-change-before-production")
 ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://host.docker.internal:8000" if APP_ENV == "development" else "").rstrip("/")
+if APP_ENV == "production" and (len(PARTNER_ADMIN_TOKEN) < 32 or "replace-with" in PARTNER_ADMIN_TOKEN.lower() or "change-before-production" in PARTNER_ADMIN_TOKEN or not ADMIN_SERVICE_URL):
+    raise RuntimeError("Configure ADMIN_SERVICE_URL and a unique PARTNER_ADMIN_TOKEN before production.")
 engine_kwargs = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
