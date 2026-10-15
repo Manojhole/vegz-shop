@@ -63,8 +63,12 @@ function renderAll() {
   $("#stat-sales").textContent = money(orders.filter(o => o.status !== "cancelled" && o.created_at.slice(0,10) === new Date().toISOString().slice(0,10)).reduce((s,o) => s + Number(o.total_amount), 0));
   $("#tab-new-count").textContent = orders.filter(o => o.status === "placed").length;
   $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type === "grocery" ? "Grocery shop" : "Vegetable shop"; $("#shop-city-setting").value = shop.city || "Hubli";
+  const approved = shop.approval_status === "approved";
+  $("#approval-notice").classList.toggle("hidden", approved);
   $("#shop-open-toggle").checked = shop.is_open; $("#accept-orders-toggle").checked = shop.accepts_orders;
-  $("#availability-note").textContent = shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
+  $("#shop-open-toggle").disabled = !approved; $("#accept-orders-toggle").disabled = !approved;
+  $("#add-product-btn").disabled = !approved; $("#empty-add-btn").disabled = !approved;
+  $("#availability-note").textContent = !approved ? "Awaiting admin approval. Availability controls unlock after approval." : shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
   $("#overview-orders").innerHTML = renderOrderRows(orders.filter(o => ["placed","accepted","preparing"].includes(o.status)).slice(0,4), true);
   if (!orders.some(o => ["placed","accepted","preparing"].includes(o.status))) $("#overview-orders").innerHTML = emptyInline("No pending orders", "Incoming orders will show here as soon as customers order.");
   renderInventoryPreview(); renderProducts(); renderOrders();
