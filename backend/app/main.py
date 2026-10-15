@@ -87,6 +87,13 @@ with engine.begin() as connection:
         connection.execute(text("ALTER TABLE shops ADD COLUMN shop_type VARCHAR(20) NOT NULL DEFAULT 'vegetable'"))
     if "city" not in shop_columns:
         connection.execute(text("ALTER TABLE shops ADD COLUMN city VARCHAR(100) NOT NULL DEFAULT 'Hubli'"))
+    duplicate_city_types = connection.execute(text(
+        "SELECT city, shop_type FROM shops GROUP BY city, shop_type HAVING COUNT(*) > 1"
+    )).fetchall()
+    if not duplicate_city_types:
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_shops_city_type ON shops (city, shop_type)"
+        ))
 
 app = FastAPI(title="Vegz Shop API", version="1.0.1", description="Shop-owner catalog, inventory, availability, and order operations.")
 app.add_middleware(
