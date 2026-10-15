@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
-const state = { token: localStorage.getItem("vegzShopToken") || "", shop: null, products: [], orders: [], view: "overview", productFilter: "all", orderFilter: "all" };
+const state = { token: localStorage.getItem("vegzShopToken") || "", shop: null, products: [], orders: [], catalog: [], view: "overview", productFilter: "all", orderFilter: "all" };
 const API = "";
 const money = (value) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -40,9 +40,16 @@ function signOut(showToast = true) {
   if (showToast) toast("You have signed out.");
 }
 async function refreshAll() {
-  const [shop, products, orders] = await Promise.all([api("/api/shop"), api("/api/products"), api("/api/orders")]);
-  state.shop = shop; state.products = products; state.orders = orders;
+  const shop = await api("/api/shop");
+  state.shop = shop;
+  if (shop.approval_status === "approved") {
+    const [products, orders, catalog] = await Promise.all([api("/api/products"), api("/api/orders"), api("/api/catalog")]);
+    state.products = products; state.orders = orders; state.catalog = catalog;
+  } else {
+    state.products = []; state.orders = []; state.catalog = [];
+  }
   renderAll();
+  if (shop.approval_status !== "approved") toast("Registration submitted. Your shop is waiting for admin approval.");
 }
 function renderAll() {
   if (!state.shop) return;
@@ -55,9 +62,13 @@ function renderAll() {
   $("#stat-new-orders").textContent = orders.filter(o => o.status === "placed").length;
   $("#stat-sales").textContent = money(orders.filter(o => o.status !== "cancelled" && o.created_at.slice(0,10) === new Date().toISOString().slice(0,10)).reduce((s,o) => s + Number(o.total_amount), 0));
   $("#tab-new-count").textContent = orders.filter(o => o.status === "placed").length;
-  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type || "vegetable"; $("#shop-city-setting").value = shop.city || "Hubli";
+  $("#shop-name").value = shop.name; $("#shop-address").value = shop.address || ""; $("#shop-type-setting").value = shop.shop_type === "grocery" ? "Grocery shop" : "Vegetable shop"; $("#shop-city-setting").value = shop.city || "Hubli";
+  const approved = shop.approval_status === "approved";
+  $("#approval-notice").classList.toggle("hidden", approved);
   $("#shop-open-toggle").checked = shop.is_open; $("#accept-orders-toggle").checked = shop.accepts_orders;
-  $("#availability-note").textContent = shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
+  $("#shop-open-toggle").disabled = !approved; $("#accept-orders-toggle").disabled = !approved;
+  $("#add-product-btn").disabled = !approved; $("#empty-add-btn").disabled = !approved;
+  $("#availability-note").textContent = !approved ? "Awaiting admin approval. Availability controls unlock after approval." : shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
   $("#overview-orders").innerHTML = renderOrderRows(orders.filter(o => ["placed","accepted","preparing"].includes(o.status)).slice(0,4), true);
   if (!orders.some(o => ["placed","accepted","preparing"].includes(o.status))) $("#overview-orders").innerHTML = emptyInline("No pending orders", "Incoming orders will show here as soon as customers order.");
   renderInventoryPreview(); renderProducts(); renderOrders();
@@ -142,16 +153,20 @@ function openProduct(product = null) {
   $("#product-form").reset();
   $("#product-id").value = product?.id || "";
   $("#product-dialog-title").textContent = product ? "Edit vegetable" : "Add vegetable";
-  $("#product-name").value = product?.name || "";
-  const allowedCategories = (state.shop?.shop_type || "vegetable") === "grocery" ? ["Grocery", "Spices"] : ["Daily essentials", "Fresh picks", "Leafy greens", "Root vegetables", "Seasonal", "Vegetables"];
+  const catalog = state.catalog || [];
+  $("#product-name").innerHTML = catalog.map(item => '<option value="' + esc(item.name) + '">' + esc(item.name) + '</option>').join("");
+  $("#product-name").value = product?.name || catalog[0]?.name || "";
+  $("#product-name").disabled = Boolean(product);
+  const chosen = catalog.find(item => item.name === $("#product-name").value);
+  const allowedCategories = [...new Set(catalog.map(item => item.category))];
   $("#product-category").innerHTML = allowedCategories.map(category => `<option>${esc(category)}</option>`).join("");
   $("#product-category").value = allowedCategories.includes(product?.category) ? product.category : allowedCategories[0];
-  $("#product-unit").value = product?.unit || "kg";
+  $("#product-unit").value = product?.unit || chosen?.unit || "kg";
   $("#product-price").value = product?.price ?? "";
   $("#product-stock").value = product?.stock_qty ?? 0;
   $("#product-out-of-stock").checked = (product?.stock_qty ?? 0) <= 0;
   $("#product-images").value = "";
-  const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : []);
+  const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : (chosen?.image_url ? [chosen.image_url] : []));
   $("#existing-product-images").innerHTML = imageList.map(url => '<img src="' + esc(url) + '" alt="Current product photo">').join("");
   $("#product-description").value = product?.description || "";
   $("#product-available").checked = product?.is_available ?? true;
@@ -226,7 +241,7 @@ $("#product-form").addEventListener("submit",async e=>{
   try {
     const saved = await api(id ? "/api/products/"+id : "/api/products",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});
     const photos = Array.from($("#product-images").files || []);
-    if (photos.length > 3) throw new Error("Choose no more than 3 photos.");
+    if (photos.length > 2) throw new Error("Choose no more than 2 additional photos; the built-in catalog image is included automatically.");
     if (photos.length) {
       const form = new FormData(); photos.forEach(file => form.append("files", file));
       const response = await fetch("/api/products/"+saved.id+"/images", {method:"POST",headers:{Authorization:"Bearer "+state.token},body:form});
@@ -238,6 +253,13 @@ $("#product-form").addEventListener("submit",async e=>{
   catch(err){toast(err.message,true);}
   finally{setBusy(button,false);}
 });
+$("#product-name").addEventListener("change", () => {
+  const item = (state.catalog || []).find(x => x.name === $("#product-name").value);
+  if (!item) return;
+  $("#product-category").value = item.category;
+  $("#product-unit").value = item.unit;
+  $("#existing-product-images").innerHTML = item.image_url ? '<img src="' + esc(item.image_url) + '" alt="Built-in Vegz catalog image">' : '<span class="veg-icon">' + vegEmoji(item.name) + '</span>';
+});
 $("#product-out-of-stock").addEventListener("change", e => { if (e.target.checked) $("#product-stock").value = "0"; });
 $("#product-stock").addEventListener("input", e => { if (Number(e.target.value) > 0) $("#product-out-of-stock").checked = false; else if (e.target.value === "0") $("#product-out-of-stock").checked = true; });
 $("#product-search").addEventListener("input",renderProducts);
@@ -248,7 +270,7 @@ $("#order-tabs").addEventListener("click", e => {
   $$("#order-tabs .tab").forEach(el => el.classList.toggle("active",el === btn)); renderOrders();
 });
 $("#shop-form").addEventListener("submit",async e=>{
-  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),shop_type:$("#shop-type-setting").value,city:$("#shop-city-setting").value,address:$("#shop-address").value.trim()},e.submitter);
+  e.preventDefault(); await updateShop({name:$("#shop-name").value.trim(),address:$("#shop-address").value.trim()},e.submitter);
 });
 $("#shop-open-toggle").addEventListener("change",async e=>{
   const input = e.target; input.disabled = true;

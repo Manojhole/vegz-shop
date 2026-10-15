@@ -50,11 +50,18 @@
 
       <section id="view-overview" class="view">
         <div class="hero-strip"><div><span class="hero-kicker">YOUR DAILY SNAPSHOT</span><h2>Small updates. <span>Happy customers.</span></h2><p>Make sure your prices, stock and orders are always up to date.</p></div><div class="hero-glyph">🌿</div></div>
+        <div id="approval-notice" class="content-note hidden"><strong>Registration awaiting review</strong><span>Your shop cannot accept orders or publish products until Vegz admin approves the registration.</span></div>
         <div class="stats-grid">
           <article class="stat-card"><div class="stat-top"><span>Total products</span><span class="stat-icon lilac">▤</span></div><div class="stat-value" id="stat-products">0</div><div class="stat-foot">In your catalog</div></article>
           <article class="stat-card"><div class="stat-top"><span>In stock</span><span class="stat-icon green">✓</span></div><div class="stat-value" id="stat-in-stock">0</div><div class="stat-foot"><span class="green-text">Available</span> to customers</div></article>
           <article class="stat-card"><div class="stat-top"><span>New orders</span><span class="stat-icon orange">↗</span></div><div class="stat-value" id="stat-new-orders">0</div><div class="stat-foot">Need your attention</div></article>
           <article class="stat-card"><div class="stat-top"><span>Today's sales</span><span class="stat-icon blue">₹</span></div><div class="stat-value" id="stat-sales">₹0</div><div class="stat-foot">Excluding cancelled orders</div></article>
+        </div>
+        <div class="section-heading"><div><h2>Store availability</h2><p>Control when customers can place orders.</p></div></div>
+        <div class="settings-card availability-dashboard-card">
+          <div class="setting-row"><div><strong>Shop is open</strong><p>Show customers that your store is currently operating.</p></div><label class="switch"><input type="checkbox" id="shop-open-toggle"><span class="slider"></span></label></div>
+          <div class="setting-row"><div><strong>Accepting orders</strong><p>Turn off to pause incoming orders without closing your shop.</p></div><label class="switch"><input type="checkbox" id="accept-orders-toggle"><span class="slider"></span></label></div>
+          <div id="availability-note" class="availability-note"></div>
         </div>
         <div class="section-heading"><div><h2>Orders to action</h2><p>Accept, prepare and update the status as orders move.</p></div><button class="text-btn" data-goto="orders">View all orders →</button></div>
         <div id="overview-orders" class="orders-list"></div>
@@ -78,12 +85,7 @@
       <section id="view-settings" class="view hidden">
         <div class="settings-layout">
           <div class="settings-card"><div class="settings-card-head"><div><h2>Shop profile</h2><p>These details identify your shop on Vegz.</p></div><span class="settings-symbol">⌂</span></div>
-            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><label for="shop-type-setting">Shop type</label><select id="shop-type-setting" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select><label for="shop-city-setting">City</label><select id="shop-city-setting" required><option value="Hubli">Hubli</option><option value="Dharwad">Dharwad</option></select><p class="hint">One vegetable shop and one grocery shop are allowed per city.</p><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
-          </div>
-          <div class="settings-card"><div class="settings-card-head"><div><h2>Store availability</h2><p>Control when customers can place orders.</p></div><span class="settings-symbol">◷</span></div>
-            <div class="setting-row"><div><strong>Shop is open</strong><p>Show customers that your store is currently operating.</p></div><label class="switch"><input type="checkbox" id="shop-open-toggle"><span class="slider"></span></label></div>
-            <div class="setting-row"><div><strong>Accepting orders</strong><p>Turn off to pause incoming orders without closing your shop.</p></div><label class="switch"><input type="checkbox" id="accept-orders-toggle"><span class="slider"></span></label></div>
-            <div id="availability-note" class="availability-note"></div>
+            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><p class="hint">Shop type and city are fixed during registration and cannot be changed here.</p><div class="form-two"><div><label>Shop type</label><input id="shop-type-setting" readonly aria-readonly="true"></div><div><label>Registered city</label><input id="shop-city-setting" readonly aria-readonly="true"></div></div><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
           </div>
           <div class="settings-card safety-card"><div class="settings-symbol">ⓘ</div><div><h3>About your shop account</h3><p>Your catalog and order data are separated by shop owner. Production use needs SMS-based owner verification and deployment secrets configured by the administrator.</p></div></div>
         </div>
@@ -96,11 +98,11 @@
     <form id="product-form" method="dialog">
       <div class="modal-head"><div><span class="eyebrow">PRODUCT CATALOG</span><h2 id="product-dialog-title">Add product</h2><p>Add a new item or update an existing listing.</p></div><button type="button" class="close-btn" id="close-product-dialog" aria-label="Close">×</button></div>
       <input id="product-id" type="hidden">
-      <label for="product-name">Product name *</label><input id="product-name" required maxlength="120" placeholder="e.g. Fresh tomatoes or Toor Dal">
+      <label for="product-name">Choose item from Vegz catalog *</label><select id="product-name" required></select><p class="hint">Built-in Vegz image is included. Add up to two real shop photos.</p>
       <div class="form-two"><div><label for="product-category">Product category</label><select id="product-category"></select></div><div><label for="product-unit">Selling unit *</label><select id="product-unit"><option value="kg">Kilogram (kg)</option><option value="g">Gram (g)</option><option value="bunch">Bunch</option><option value="pc">Piece</option><option value="packet">Packet</option><option value="dozen">Dozen</option></select></div></div>
       <div class="form-two"><div><label for="product-price">Price (₹) *</label><input id="product-price" type="number" min="0.01" step="0.01" required placeholder="0.00"></div><div><label for="product-stock">Stock quantity *</label><input id="product-stock" type="number" min="0" step="1" required placeholder="0"></div></div>
        <div class="setting-row compact"><div><strong>Mark out of stock</strong><p>Turn this on when the item is temporarily unavailable. Stock quantity will be set to zero.</p></div><label class="switch"><input id="product-out-of-stock" type="checkbox"><span class="slider"></span></label></div>
-      <label for="product-images">Product photos (up to 3 real images)</label><input id="product-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><p class="hint">Upload up to 3 JPG, PNG or WEBP photos, max 5 MB each. New uploads replace the current photos.</p><div id="existing-product-images" class="product-image-preview" aria-live="polite"></div>
+      <label for="product-images">Additional shop photos (optional, max 2)</label><input id="product-images" type="file" accept="image/jpeg,image/png,image/webp" multiple><p class="hint">The catalog image stays first. Upload up to two JPG, PNG or WEBP photos, max 5 MB each.</p><div id="existing-product-images" class="product-image-preview" aria-live="polite"></div>
       <label for="product-description">Description (optional)</label><textarea id="product-description" rows="2" maxlength="300" placeholder="Quality, freshness or sourcing notes"></textarea>
       <div class="setting-row compact"><div><strong>Listing visible</strong><p>When on and stock is above zero, customers can see the item.</p></div><label class="switch"><input id="product-available" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="modal-actions"><button type="button" class="btn secondary" id="cancel-product">Cancel</button><button class="btn primary" type="submit" id="save-product-btn">Save product</button></div>

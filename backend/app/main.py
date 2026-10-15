@@ -4,6 +4,7 @@ import re
 import secrets
 import shutil
 import uuid
+import httpx
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +23,10 @@ load_dotenv()
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vegz_shop.db")
 JWT_SECRET = os.getenv("JWT_SECRET", "local-dev-only-change-this-secret")
+PARTNER_ADMIN_TOKEN = os.getenv("PARTNER_ADMIN_TOKEN", "vegz-local-partner-token-change-before-production")
+ADMIN_SERVICE_URL = os.getenv("ADMIN_SERVICE_URL", "http://host.docker.internal:8000" if APP_ENV == "development" else "").rstrip("/")
+if APP_ENV == "production" and (len(PARTNER_ADMIN_TOKEN) < 32 or "replace-with" in PARTNER_ADMIN_TOKEN.lower() or "change-before-production" in PARTNER_ADMIN_TOKEN or not ADMIN_SERVICE_URL):
+    raise RuntimeError("Configure ADMIN_SERVICE_URL and a unique PARTNER_ADMIN_TOKEN before production.")
 engine_kwargs = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
@@ -42,9 +47,91 @@ class Shop(Base):
     address: Mapped[str] = mapped_column(String(300), default="")
     city: Mapped[str] = mapped_column(String(100), default="Hubli", index=True)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
-    accepts_orders: Mapped[bool] = mapped_column(Boolean, default=True)
+    accepts_orders: Mapped[bool] = mapped_column(Boolean, default=False)
+    approval_status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
+CATALOG = {
+    "Tomato": ("Daily essentials", "Juicy, ripe tomatoes for everyday cooking.", "https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Potato": ("Daily essentials", "Fresh everyday potatoes, sorted with care.", "https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Red Onion": ("Daily essentials", "Kitchen-ready red onions with a bold flavour.", "https://images.unsplash.com/photo-1508747703725-719777637510?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Carrot": ("Fresh picks", "Crunchy carrots, full of colour and freshness.", "https://images.unsplash.com/photo-1445282768818-728615cc910a?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Spinach": ("Leafy greens", "Tender green leaves, great for dals and curries.", "https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=crop&w=700&q=85", "bunch"),
+    "Broccoli": ("Fresh picks", "Fresh green florets for colourful, healthy meals.", "https://images.unsplash.com/photo-1459411621453-7b03977f4bfc?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Cabbage": ("Fresh picks", "Firm, crisp cabbage for salads and stir-fries.", "https://images.unsplash.com/photo-1594282486552-05f4d1e3d3c9?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Green Capsicum": ("Fresh picks", "Bright green capsicum with a clean, crisp bite.", "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Cucumber": ("Fresh picks", "Crisp cucumbers for salads.", "https://images.unsplash.com/photo-1604977042946-1eecc30f269e?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Cauliflower": ("Fresh picks", "Fresh florets for curries.", "https://images.unsplash.com/photo-1568584711075-3d021a7c3ca3?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Brinjal": ("Fresh picks", "Glossy brinjals for home cooking.", "https://images.unsplash.com/photo-1659261200848-1f3c2f8a0f19?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Lady Finger": ("Fresh picks", "Tender okra for Indian cooking.", "https://images.unsplash.com/photo-1635350673954-9a2f5f2e5e9a?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Green Peas": ("Fresh picks", "Sweet peas for curries and snacks.", "https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Beetroot": ("Fresh picks", "Earthy beetroot for salads and juices.", "https://images.unsplash.com/photo-1607305387299-a3d9611cd469?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Radish": ("Fresh picks", "Fresh radish with a peppery crunch.", "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Pumpkin": ("Fresh picks", "Sweet pumpkin for comforting meals.", "https://images.unsplash.com/photo-1570586437263-ab629fccc818?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Bitter Gourd": ("Fresh picks", "Fresh karela for traditional recipes.", "", "kg"),
+    "Bottle Gourd": ("Fresh picks", "Tender bottle gourd for light meals.", "", "pc"),
+    "Green Beans": ("Fresh picks", "Crisp beans for stir-fries and sabzi.", "https://images.unsplash.com/photo-1567375698348-5d9d5ae99de0?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Sweet Corn": ("Fresh picks", "Sweet corn for snacks and soups.", "https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Garlic": ("Daily essentials", "Aromatic garlic for everyday flavour.", "", "kg"),
+    "Ginger": ("Daily essentials", "Fresh ginger root for chai and curries.", "https://images.unsplash.com/photo-1615485500704-8e990f9900f2?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Green Chilli": ("Daily essentials", "Green chillies to add a little heat.", "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Coriander": ("Leafy greens", "Fragrant coriander bunches.", "https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=700&q=85", "bunch"),
+    "Mint": ("Leafy greens", "Fresh mint for chutneys and drinks.", "https://images.unsplash.com/photo-1628556270448-4d4e4148e1b1?auto=format&fit=crop&w=700&q=85", "bunch"),
+    "Spring Onion": ("Leafy greens", "Spring onions for noodles and stir-fries.", "https://images.unsplash.com/photo-1587049633312-76c8eb07bbc5?auto=format&fit=crop&w=700&q=85", "bunch"),
+    "Red Bell Pepper": ("Fresh picks", "Sweet red pepper for colourful meals.", "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Lettuce": ("Leafy greens", "Crisp lettuce for salads and wraps.", "https://images.unsplash.com/photo-1556801712-76c8eb07bbc9?auto=format&fit=crop&w=700&q=85", "pc"),
+    "Basmati Rice": ("Grocery", "Fragrant rice for biryani and pulao.", "", "kg"),
+    "Toor Dal": ("Grocery", "Split pigeon peas for everyday dal.", "", "kg"),
+    "Moong Dal": ("Grocery", "Moong dal for khichdi and soups.", "", "kg"),
+    "Chana Dal": ("Grocery", "Chana dal for curries and snacks.", "", "kg"),
+    "Wheat Flour": ("Grocery", "Everyday atta for soft rotis.", "", "kg"),
+    "Besan": ("Grocery", "Gram flour for pakoras and chilla.", "", "kg"),
+    "Cooking Oil": ("Grocery", "Kitchen oil for daily meal preparation.", "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=700&q=85", "L"),
+    "Sugar": ("Grocery", "Fine sugar for tea and baking.", "https://images.unsplash.com/photo-1581441363689-1f3c3c414635?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Salt": ("Grocery", "Essential everyday cooking salt.", "https://images.unsplash.com/photo-1518110925495-5fe2fda0442f?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Tea Powder": ("Grocery", "Everyday tea for your morning cup.", "https://images.unsplash.com/photo-1544787219-7f47ccb76574?auto=format&fit=crop&w=700&q=85", "250 g"),
+    "Coffee": ("Grocery", "Rich coffee for your daily brew.", "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=700&q=85", "200 g"),
+    "Turmeric Powder": ("Spices", "Golden turmeric powder for cooking.", "https://images.unsplash.com/photo-1615485500704-8e990f9900f2?auto=format&fit=crop&w=700&q=85", "100 g"),
+    "Red Chilli Powder": ("Spices", "Ground chilli for warmth and colour.", "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=700&q=85", "100 g"),
+    "Cumin Seeds": ("Spices", "Aromatic cumin for seasoning.", "https://images.unsplash.com/photo-1599909533605-f2c5a5a4c2ca?auto=format&fit=crop&w=700&q=85", "100 g"),
+    "Mustard Seeds": ("Spices", "Mustard seeds for tadka and pickles.", "https://images.unsplash.com/photo-1603905179139-2e0a8c1e5f68?auto=format&fit=crop&w=700&q=85", "100 g"),
+    "Poha": ("Grocery", "Flattened rice for quick breakfasts.", "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Oats": ("Grocery", "Rolled oats for breakfast and baking.", "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=700&q=85", "500 g"),
+    "Peanuts": ("Grocery", "Crunchy peanuts for snacks and chutneys.", "https://images.unsplash.com/photo-1567892737950-30c4db37cd89?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Jaggery": ("Grocery", "Traditional jaggery for sweets and drinks.", "https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=700&q=85", "kg"),
+    "Pasta": ("Grocery", "Pantry pasta for quick family meals.", "https://images.unsplash.com/photo-1551462147-ff29053bfc14?auto=format&fit=crop&w=700&q=85", "500 g"),
+    "Drumstick": ("Fresh picks", "Tender drumsticks for sambar and saaru.", "", "kg"),
+    "Ridge Gourd": ("Fresh picks", "Fresh ridge gourd for palya and dal.", "", "kg"),
+    "Snake Gourd": ("Fresh picks", "Mild snake gourd for everyday curries.", "", "kg"),
+    "Cluster Beans": ("Fresh picks", "Cluster beans for Karnataka-style palya.", "", "kg"),
+    "Ivy Gourd": ("Fresh picks", "Tender tindora for quick stir-fries.", "", "kg"),
+    "Raw Banana": ("Fresh picks", "Raw banana for palya and shallow-fried sides.", "", "kg"),
+    "Curry Leaves": ("Leafy greens", "Aromatic curry leaves for everyday tempering.", "", "bunch"),
+    "Dill Leaves": ("Leafy greens", "Fresh sabsige soppu for palya and akki rotti.", "", "bunch"),
+    "Fenugreek Leaves": ("Leafy greens", "Fresh menthya soppu for palya and parathas.", "", "bunch"),
+    "Drumstick Leaves": ("Leafy greens", "Fresh nugge soppu for saaru and palya.", "", "bunch"),
+    "Coconut": ("Daily essentials", "Fresh coconut for chutney, palya and cooking.", "", "pc"),
+    "Lemon": ("Daily essentials", "Juicy lemons for chitranna, drinks and seasoning.", "", "kg"),
+    "Ragi Flour": ("Grocery", "Finger millet flour for ragi mudde and ragi rotti.", "", "kg"),
+    "Jowar Flour": ("Grocery", "Jowar flour for traditional jolada rotti.", "", "kg"),
+    "Rice Flour": ("Grocery", "Rice flour for akki rotti and everyday recipes.", "", "kg"),
+    "Rava": ("Grocery", "Semolina for upma, kesari bath and breakfast.", "", "kg"),
+    "Urad Dal": ("Grocery", "Urad dal for idli, dosa batter and vada.", "", "kg"),
+    "Masoor Dal": ("Grocery", "Masoor dal for quick everyday dal.", "", "kg"),
+    "Tamarind": ("Grocery", "Tamarind for saaru, gojju and puliyogare.", "", "250 g"),
+    "Dry Coconut": ("Grocery", "Dry coconut for chutney pudi and traditional masala.", "", "pc"),
+    "Groundnut Oil": ("Grocery", "Groundnut oil for everyday cooking.", "", "L"),
+    "Coconut Oil": ("Grocery", "Coconut oil for cooking and coastal recipes.", "", "L"),
+    "Sambar Powder": ("Spices", "Sambar powder for everyday saaru and sambar.", "", "200 g"),
+    "Rasam Powder": ("Spices", "Rasam powder for a quick home-style saaru.", "", "100 g"),
+    "Chutney Pudi": ("Spices", "Karnataka-style chutney pudi for rotti and idli.", "", "200 g"),
+    "Byadgi Chilli": ("Spices", "Byadgi chillies for colour and flavour in masala.", "", "100 g"),
+    "Papad": ("Grocery", "Crispy papad for everyday meals.", "", "200 g"),
+    "Vermicelli": ("Grocery", "Vermicelli for upma, payasa and quick snacks.", "", "400 g"),
+    "Green Gram Whole": ("Grocery", "Whole green gram for usal, sprouts and palya.", "", "kg"),
+    "Horse Gram": ("Grocery", "Huruli kaalu for saaru and traditional recipes.", "", "kg"),
+}
 
 class Product(Base):
     __tablename__ = "products"
@@ -87,6 +174,8 @@ with engine.begin() as connection:
         connection.execute(text("ALTER TABLE shops ADD COLUMN shop_type VARCHAR(20) NOT NULL DEFAULT 'vegetable'"))
     if "city" not in shop_columns:
         connection.execute(text("ALTER TABLE shops ADD COLUMN city VARCHAR(100) NOT NULL DEFAULT 'Hubli'"))
+    if "approval_status" not in shop_columns:
+        connection.execute(text("ALTER TABLE shops ADD COLUMN approval_status VARCHAR(24) NOT NULL DEFAULT 'pending'"))
     duplicate_city_types = connection.execute(text(
         "SELECT city, shop_type FROM shops GROUP BY city, shop_type HAVING COUNT(*) > 1"
     )).fetchall()
@@ -173,7 +262,7 @@ class DemoLogin(BaseModel):
 
 def shop_payload(shop: Shop):
     return {"id": shop.id, "owner_phone": shop.owner_phone, "name": shop.name, "shop_type": shop.shop_type, "address": shop.address,
-            "city": shop.city, "is_open": shop.is_open, "accepts_orders": shop.accepts_orders,
+            "city": shop.city, "is_open": shop.is_open, "accepts_orders": shop.accepts_orders, "approval_status": shop.approval_status,
             "created_at": shop.created_at.isoformat() + "Z"}
 
 
@@ -213,11 +302,16 @@ def current_shop(authorization: str | None = Header(default=None), db: Session =
         raise HTTPException(status_code=401, detail="Shop account not found.")
     return shop
 
+def require_approved_shop(shop: Shop = Depends(current_shop)) -> Shop:
+    if shop.approval_status != "approved":
+        raise HTTPException(status_code=403, detail="Your shop registration is awaiting admin approval.")
+    return shop
+
 
 @app.get("/api/marketplace")
 def marketplace(city: str | None = None, db: Session = Depends(get_db)):
     """Public catalog for the requested delivery city; only orderable shops/products are shown."""
-    query = select(Shop).where(Shop.is_open.is_(True), Shop.accepts_orders.is_(True))
+    query = select(Shop).where(Shop.approval_status == "approved", Shop.is_open.is_(True), Shop.accepts_orders.is_(True))
     if city and city.strip():
         query = query.where(Shop.city == city.strip().title())
     shops = db.scalars(query.order_by(Shop.id)).all()
@@ -241,6 +335,31 @@ def marketplace(city: str | None = None, db: Session = Depends(get_db)):
     return result
 
 
+class AdminApprovalIn(BaseModel):
+    phone: str = Field(min_length=8, max_length=24)
+    status: str = Field(pattern=r"^(approved|rejected|suspended|pending)$")
+
+
+@app.post("/api/internal/admin-approval")
+def admin_approval(payload: AdminApprovalIn, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    expected = PARTNER_ADMIN_TOKEN
+    supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
+    if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Partner approval authentication failed.")
+    digits = re.sub(r"\D", "", payload.phone)
+    phone = "+91" + digits[-10:] if len(digits) >= 10 and (len(digits) == 10 or digits.startswith("91")) else re.sub(r"[^0-9+]", "", payload.phone)
+    shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
+    if shop is None:
+        raise HTTPException(status_code=404, detail="Shop registration not found.")
+    shop.approval_status = payload.status
+    if payload.status != "approved":
+        shop.is_open = False
+        shop.accepts_orders = False
+    db.commit()
+    db.refresh(shop)
+    return shop_payload(shop)
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "vegz-shop-api"}
@@ -251,8 +370,11 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
     """Development-only sign-in; replace with SMS OTP/approved identity provider in production."""
     if APP_ENV == "production":
         raise HTTPException(status_code=503, detail="Configure the production identity provider before enabling shop-owner sign-in.")
-    phone = re.sub(r"[^0-9+]", "", payload.phone)
-    if len(re.sub(r"\D", "", phone)) < 8:
+    digits = re.sub(r"\D", "", payload.phone)
+    if len(digits) >= 12 and digits.startswith("91"):
+        digits = digits[-10:]
+    phone = "+91" + digits if len(digits) == 10 else "+" + digits if len(digits) >= 8 else ""
+    if len(digits) < 8:
         raise HTTPException(status_code=400, detail="Enter a valid owner mobile number.")
     if payload.demo_code != os.getenv("SHOP_DEMO_CODE", "123456"):
         raise HTTPException(status_code=400, detail="Invalid development code. Use the configured demo code.")
@@ -262,7 +384,7 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
         duplicate = db.scalar(select(Shop).where(Shop.city == normalized_city, Shop.shop_type == payload.shop_type))
         if duplicate is not None:
             raise HTTPException(status_code=409, detail=f"A {payload.shop_type} shop is already registered in {normalized_city}. Vegz allows only one shop of each type per city.")
-        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type, city=normalized_city)
+        shop = Shop(owner_phone=phone, name="My Vegz Shop", shop_type=payload.shop_type, city=normalized_city, approval_status="pending", is_open=False, accepts_orders=False)
         db.add(shop)
         db.commit()
         db.refresh(shop)
@@ -274,6 +396,18 @@ def demo_login(payload: DemoLogin, db: Session = Depends(get_db)):
             shop.city = normalized_city
             db.commit()
             db.refresh(shop)
+    admin_url = ADMIN_SERVICE_URL
+    admin_token = PARTNER_ADMIN_TOKEN
+    if admin_url and len(admin_token) >= 32:
+        try:
+            response = httpx.post(admin_url + "/api/internal/partner-requests/shop", headers={"Authorization": "Bearer " + admin_token}, json={
+                "name": shop.name, "owner_name": "", "phone": shop.owner_phone, "city": shop.city,
+                "shop_type": shop.shop_type, "address": shop.address, "external_ref": str(shop.id)
+            }, timeout=5.0)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            if APP_ENV == "production":
+                raise HTTPException(status_code=503, detail="Could not submit shop registration for admin review.")
     token = jwt.encode({"shop_id": shop.id, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm="HS256")
     return {"access_token": token, "token_type": "bearer", "shop": shop_payload(shop)}
 
@@ -286,8 +420,14 @@ def get_shop(shop: Shop = Depends(current_shop)):
 @app.patch("/api/shop")
 def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     changes = payload.model_dump(exclude_unset=True)
-    target_city = " ".join((changes.get("city") or shop.city).split()).title()
-    target_type = changes.get("shop_type") or shop.shop_type
+    if shop.approval_status != "approved" and (changes.get("is_open") is True or changes.get("accepts_orders") is True):
+        raise HTTPException(status_code=403, detail="Shop availability can be enabled only after admin approval.")
+    if "city" in changes and " ".join(changes["city"].split()).title() != shop.city:
+        raise HTTPException(status_code=403, detail="Shop city is fixed at registration. Contact Vegz support if it was entered incorrectly.")
+    if "shop_type" in changes and changes["shop_type"] != shop.shop_type:
+        raise HTTPException(status_code=403, detail="Shop type is fixed at registration. Contact Vegz support if it was entered incorrectly.")
+    target_city = shop.city
+    target_type = shop.shop_type
     if "city" in changes or "shop_type" in changes:
         duplicate = db.scalar(select(Shop).where(Shop.id != shop.id, Shop.city == target_city, Shop.shop_type == target_type))
         if duplicate is not None:
@@ -299,15 +439,28 @@ def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Sess
     return shop_payload(shop)
 
 
+@app.get("/api/catalog")
+def list_catalog(shop: Shop = Depends(current_shop)):
+    return [
+        {"name": name, "category": values[0], "description": values[1], "image_url": values[2], "unit": values[3]}
+        for name, values in CATALOG.items()
+        if (values[0] in {"Grocery", "Spices"}) == (shop.shop_type == "grocery")
+    ]
+
+
 @app.get("/api/products")
-def list_products(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def list_products(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     return [product_payload(p) for p in db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()]
 
 
 @app.post("/api/products", status_code=201)
-def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
+    if payload.name not in CATALOG:
+        raise HTTPException(status_code=422, detail="Choose an item from the Vegz catalog.")
     data = payload.model_dump()
-    data["image_urls"] = json.dumps(data["image_urls"][:3])
+    catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[payload.name]
+    data["category"], data["description"], data["image_url"], data["unit"] = catalog_category, catalog_description, catalog_image, catalog_unit
+    data["image_urls"] = json.dumps(([catalog_image] if catalog_image else []) + [u for u in data["image_urls"] if u and u != catalog_image][:2])
     if not data["image_url"] and data["image_urls"]:
         data["image_url"] = data["image_urls"][0]
     p = Product(shop_id=shop.id, **data)
@@ -318,16 +471,26 @@ def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: S
 
 
 @app.patch("/api/products/{product_id}")
-def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "name" in changes and changes["name"] != p.name:
+        raise HTTPException(status_code=403, detail="Product identity is fixed by the Vegz catalog.")
+    catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[p.name]
+    changes.pop("name", None)
+    changes.pop("category", None)
+    changes.pop("description", None)
+    changes.pop("unit", None)
+    changes.pop("image_url", None)
+    for key, value in changes.items():
         if key == "image_urls":
             value = json.dumps((value or [])[:3])
             if value != "[]" and not payload.image_url:
                 p.image_url = json.loads(value)[0]
         setattr(p, key, value)
+    p.category, p.description, p.unit, p.image_url = catalog_category, catalog_description, catalog_unit, catalog_image
     db.commit()
     db.refresh(p)
     return product_payload(p)
@@ -337,11 +500,11 @@ def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(
 def upload_product_images(
     product_id: int,
     files: list[UploadFile] = File(...),
-    shop: Shop = Depends(current_shop),
+    shop: Shop = Depends(require_approved_shop),
     db: Session = Depends(get_db),
 ):
-    if not 1 <= len(files) <= 3:
-        raise HTTPException(status_code=400, detail="Upload between 1 and 3 product images.")
+    if not 1 <= len(files) <= 2:
+        raise HTTPException(status_code=400, detail="Upload one or two additional product images.")
     product = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found.")
@@ -360,15 +523,16 @@ def upload_product_images(
         with (upload_dir / filename).open("wb") as image_file:
             image_file.write(data)
         urls.append(f"/uploads/{filename}")
-    product.image_urls = json.dumps(urls)
-    product.image_url = urls[0]
+    base_image = CATALOG.get(product.name, ("", "", product.image_url, ""))[2]
+    product.image_url = base_image
+    product.image_urls = json.dumps([base_image] + [url for url in urls if url != base_image][:2])
     db.commit()
     db.refresh(product)
     return product_payload(product)
 
 
 @app.delete("/api/products/{product_id}")
-def delete_product(product_id: int, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def delete_product(product_id: int, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
@@ -434,7 +598,7 @@ def create_internal_order(
 
 
 @app.get("/api/orders")
-def list_orders(status_filter: str | None = None, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def list_orders(status_filter: str | None = None, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     query = select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))
     if status_filter:
         query = query.where(ShopOrder.status == status_filter)
@@ -442,7 +606,7 @@ def list_orders(status_filter: str | None = None, shop: Shop = Depends(current_s
 
 
 @app.patch("/api/orders/{order_id}/status")
-def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     allowed = {
         "placed": {"accepted", "rejected", "cancelled"},
         "accepted": {"preparing", "cancelled"},
@@ -471,7 +635,7 @@ def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = D
 
 
 @app.get("/api/dashboard")
-def dashboard(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def dashboard(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     products = db.scalars(select(Product).where(Product.shop_id == shop.id)).all()
     orders = db.scalars(select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))).all()
     today = datetime.utcnow().date()
@@ -487,7 +651,7 @@ def dashboard(shop: Shop = Depends(current_shop), db: Session = Depends(get_db))
 
 
 @app.post("/api/dev/seed")
-def seed_demo_data(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def seed_demo_data(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     """Creates sample vegetable listings once for this shop."""
     if db.scalar(select(Product.id).where(Product.shop_id == shop.id).limit(1)) is not None:
         return {"message": "This shop already has products."}
