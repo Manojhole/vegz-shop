@@ -215,6 +215,9 @@ def current_shop(authorization: str | None = Header(default=None), db: Session =
     shop = db.get(Shop, shop_id)
     if shop is None:
         raise HTTPException(status_code=401, detail="Shop account not found.")
+    return shop
+
+def require_approved_shop(shop: Shop = Depends(current_shop)) -> Shop:
     if shop.approval_status != "approved":
         raise HTTPException(status_code=403, detail="Your shop registration is awaiting admin approval.")
     return shop
@@ -322,12 +325,12 @@ def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Sess
 
 
 @app.get("/api/products")
-def list_products(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def list_products(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     return [product_payload(p) for p in db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()]
 
 
 @app.post("/api/products", status_code=201)
-def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     data = payload.model_dump()
     data["image_urls"] = json.dumps(data["image_urls"][:3])
     if not data["image_url"] and data["image_urls"]:
@@ -340,7 +343,7 @@ def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: S
 
 
 @app.patch("/api/products/{product_id}")
-def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
@@ -359,7 +362,7 @@ def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(
 def upload_product_images(
     product_id: int,
     files: list[UploadFile] = File(...),
-    shop: Shop = Depends(current_shop),
+    shop: Shop = Depends(require_approved_shop),
     db: Session = Depends(get_db),
 ):
     if not 1 <= len(files) <= 3:
@@ -390,7 +393,7 @@ def upload_product_images(
 
 
 @app.delete("/api/products/{product_id}")
-def delete_product(product_id: int, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def delete_product(product_id: int, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
@@ -456,7 +459,7 @@ def create_internal_order(
 
 
 @app.get("/api/orders")
-def list_orders(status_filter: str | None = None, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def list_orders(status_filter: str | None = None, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     query = select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))
     if status_filter:
         query = query.where(ShopOrder.status == status_filter)
@@ -464,7 +467,7 @@ def list_orders(status_filter: str | None = None, shop: Shop = Depends(current_s
 
 
 @app.patch("/api/orders/{order_id}/status")
-def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     allowed = {
         "placed": {"accepted", "rejected", "cancelled"},
         "accepted": {"preparing", "cancelled"},
@@ -493,7 +496,7 @@ def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = D
 
 
 @app.get("/api/dashboard")
-def dashboard(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def dashboard(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     products = db.scalars(select(Product).where(Product.shop_id == shop.id)).all()
     orders = db.scalars(select(ShopOrder).where(ShopOrder.shop_id == shop.id).order_by(desc(ShopOrder.created_at))).all()
     today = datetime.utcnow().date()
@@ -509,7 +512,7 @@ def dashboard(shop: Shop = Depends(current_shop), db: Session = Depends(get_db))
 
 
 @app.post("/api/dev/seed")
-def seed_demo_data(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
+def seed_demo_data(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
     """Creates sample vegetable listings once for this shop."""
     if db.scalar(select(Product.id).where(Product.shop_id == shop.id).limit(1)) is not None:
         return {"message": "This shop already has products."}
