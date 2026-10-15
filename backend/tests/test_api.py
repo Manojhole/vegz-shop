@@ -94,5 +94,19 @@ class ShopApiTests(unittest.TestCase):
         self.assertEqual(hidden_city.status_code, 200)
         self.assertFalse(any(shop["shop_id"] == enabled.json()["id"] for shop in hidden_city.json()))
 
+    def test_registration_is_sent_to_admin_review_queue(self):
+        from unittest.mock import Mock, patch
+        with patch("backend.app.main.ADMIN_SERVICE_URL", "http://admin.test"), patch("backend.app.main.httpx.post", return_value=Mock(raise_for_status=Mock())) as callback:
+            response = client.post("/api/auth/demo-login", json={
+                "phone": "9876543212", "demo_code": "123456", "shop_type": "grocery", "city": "Hubli"
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["shop"]["approval_status"], "pending")
+        args, kwargs = callback.call_args
+        self.assertEqual(args[0], "http://admin.test/api/internal/partner-requests/shop")
+        self.assertEqual(kwargs["json"]["phone"], "+919876543212")
+        self.assertEqual(kwargs["json"]["shop_type"], "grocery")
+        self.assertEqual(kwargs["json"]["city"], "Hubli")
+
 if __name__ == "__main__":
     unittest.main()
