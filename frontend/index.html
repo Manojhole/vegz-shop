@@ -56,6 +56,12 @@
           <article class="stat-card"><div class="stat-top"><span>New orders</span><span class="stat-icon orange">↗</span></div><div class="stat-value" id="stat-new-orders">0</div><div class="stat-foot">Need your attention</div></article>
           <article class="stat-card"><div class="stat-top"><span>Today's sales</span><span class="stat-icon blue">₹</span></div><div class="stat-value" id="stat-sales">₹0</div><div class="stat-foot">Excluding cancelled orders</div></article>
         </div>
+        <div class="section-heading"><div><h2>Store availability</h2><p>Control when customers can place orders.</p></div></div>
+        <div class="settings-card availability-dashboard-card">
+          <div class="setting-row"><div><strong>Shop is open</strong><p>Show customers that your store is currently operating.</p></div><label class="switch"><input type="checkbox" id="shop-open-toggle"><span class="slider"></span></label></div>
+          <div class="setting-row"><div><strong>Accepting orders</strong><p>Turn off to pause incoming orders without closing your shop.</p></div><label class="switch"><input type="checkbox" id="accept-orders-toggle"><span class="slider"></span></label></div>
+          <div id="availability-note" class="availability-note"></div>
+        </div>
         <div class="section-heading"><div><h2>Orders to action</h2><p>Accept, prepare and update the status as orders move.</p></div><button class="text-btn" data-goto="orders">View all orders →</button></div>
         <div id="overview-orders" class="orders-list"></div>
         <div class="section-heading"><div><h2>Inventory at a glance</h2><p>Quickly spot low or unavailable vegetables.</p></div><button class="text-btn" data-goto="products">Manage vegetables →</button></div>
@@ -78,12 +84,7 @@
       <section id="view-settings" class="view hidden">
         <div class="settings-layout">
           <div class="settings-card"><div class="settings-card-head"><div><h2>Shop profile</h2><p>These details identify your shop on Vegz.</p></div><span class="settings-symbol">⌂</span></div>
-            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><label for="shop-type-setting">Shop type</label><select id="shop-type-setting" required><option value="vegetable">Vegetable shop</option><option value="grocery">Grocery shop</option></select><label for="shop-city-setting">City</label><select id="shop-city-setting" required><option value="Hubli">Hubli</option><option value="Dharwad">Dharwad</option></select><p class="hint">One vegetable shop and one grocery shop are allowed per city.</p><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
-          </div>
-          <div class="settings-card"><div class="settings-card-head"><div><h2>Store availability</h2><p>Control when customers can place orders.</p></div><span class="settings-symbol">◷</span></div>
-            <div class="setting-row"><div><strong>Shop is open</strong><p>Show customers that your store is currently operating.</p></div><label class="switch"><input type="checkbox" id="shop-open-toggle"><span class="slider"></span></label></div>
-            <div class="setting-row"><div><strong>Accepting orders</strong><p>Turn off to pause incoming orders without closing your shop.</p></div><label class="switch"><input type="checkbox" id="accept-orders-toggle"><span class="slider"></span></label></div>
-            <div id="availability-note" class="availability-note"></div>
+            <form id="shop-form" class="settings-form"><label for="shop-name">Shop name</label><input id="shop-name" required minlength="2" maxlength="120"><p class="hint">Shop type and city are fixed during registration and cannot be changed here.</p><div class="form-two"><div><label>Shop type</label><input id="shop-type-setting" readonly aria-readonly="true"></div><div><label>Registered city</label><input id="shop-city-setting" readonly aria-readonly="true"></div></div><label for="shop-address">Shop address</label><textarea id="shop-address" rows="3" maxlength="300" placeholder="Enter your shop address"></textarea><button class="btn primary" type="submit">Save shop details</button></form>
           </div>
           <div class="settings-card safety-card"><div class="settings-symbol">ⓘ</div><div><h3>About your shop account</h3><p>Your catalog and order data are separated by shop owner. Production use needs SMS-based owner verification and deployment secrets configured by the administrator.</p></div></div>
         </div>
