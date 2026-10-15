@@ -30,7 +30,7 @@ class ShopApiTests(unittest.TestCase):
         before = client.get("/api/products", headers=self.headers)
         self.assertEqual(before.status_code, 200)
         response = client.post("/api/products", headers=self.headers, json={
-            "name": "Test Tomato", "category": "Fresh picks", "unit": "kg",
+            "name": "Tomato", "category": "Fresh picks", "unit": "kg",
             "price": 39.5, "stock_qty": 12, "is_available": True,
         })
         self.assertEqual(response.status_code, 201, response.text)
