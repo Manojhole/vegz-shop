@@ -73,5 +73,26 @@ class ShopApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
 
+    def test_customer_marketplace_only_exposes_approved_open_orderable_stock(self):
+        product = client.post("/api/products", headers=self.headers, json={
+            "name": "Tomato", "price": 34, "stock_qty": 8, "is_available": True,
+            "image_urls": ["https://example.test/shop-tomato-1.jpg", "https://example.test/shop-tomato-2.jpg"]
+        })
+        self.assertEqual(product.status_code, 201, product.text)
+        payload = product.json()
+        self.assertTrue(payload["image_urls"][0])
+        self.assertEqual(len(payload["image_urls"]), 3)
+        self.assertNotEqual(payload["image_urls"][0], "https://example.test/shop-tomato-1.jpg")
+        enabled = client.patch("/api/shop", headers=self.headers, json={"is_open": True, "accepts_orders": True})
+        self.assertEqual(enabled.status_code, 200, enabled.text)
+        visible = client.get("/api/marketplace?city=Hubli")
+        self.assertEqual(visible.status_code, 200, visible.text)
+        matching = [shop for shop in visible.json() if shop["shop_id"] == enabled.json()["id"]]
+        self.assertEqual(len(matching), 1)
+        self.assertTrue(any(item["name"] == "Tomato" for item in matching[0]["products"]))
+        hidden_city = client.get("/api/marketplace?city=Dharwad")
+        self.assertEqual(hidden_city.status_code, 200)
+        self.assertFalse(any(shop["shop_id"] == enabled.json()["id"] for shop in hidden_city.json()))
+
 if __name__ == "__main__":
     unittest.main()
