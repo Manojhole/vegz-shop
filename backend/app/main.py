@@ -161,6 +161,7 @@ class InternalShopOrder(BaseModel):
 
 class OrderStatusPatch(BaseModel):
     status: str
+    reason: str = Field(default="", max_length=300)
 
 
 class DemoLogin(BaseModel):
@@ -443,12 +444,13 @@ def list_orders(status_filter: str | None = None, shop: Shop = Depends(current_s
 @app.patch("/api/orders/{order_id}/status")
 def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     allowed = {
-        "placed": {"accepted", "cancelled"},
+        "placed": {"accepted", "rejected", "cancelled"},
         "accepted": {"preparing", "cancelled"},
         "preparing": {"ready", "cancelled"},
         "ready": {"out_for_delivery", "cancelled"},
         "out_for_delivery": {"delivered"},
         "delivered": set(),
+        "rejected": set(),
         "cancelled": set(),
     }
     o = db.scalar(select(ShopOrder).where(ShopOrder.id == order_id, ShopOrder.shop_id == shop.id))
@@ -457,6 +459,10 @@ def update_order_status(order_id: int, payload: OrderStatusPatch, shop: Shop = D
     next_status = payload.status.strip().lower()
     if next_status not in allowed.get(o.status, set()):
         raise HTTPException(status_code=409, detail=f"Cannot move order from {o.status} to {next_status}.")
+    if next_status == "rejected" and not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="A rejection reason is required so the customer can be informed.")
+    if next_status == "rejected":
+        o.note = (o.note + "\n" if o.note else "") + "Rejection reason: " + payload.reason.strip()
     o.status = next_status
     o.updated_at = datetime.utcnow()
     db.commit()
