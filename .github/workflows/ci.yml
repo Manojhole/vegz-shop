@@ -20,6 +20,10 @@ jobs:
         with:
           node-version: "22"
       - run: node --check frontend/app.js
+      - name: Build Next.js shop web
+        run: |
+          npm --prefix web install --no-audit --no-fund
+          npm --prefix web run build
       - name: Type-check Expo shop app
         run: |
           npm --prefix mobile install --no-audit --no-fund
