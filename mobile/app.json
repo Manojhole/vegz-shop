@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Vegz Shop",
+    "slug": "vegz-shop",
+    "scheme": "vegzshop",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router", "expo-secure-store"],
+    "android": { "package": "online.vegz.shop" },
+    "ios": { "bundleIdentifier": "online.vegz.shop" }
+  }
+}
