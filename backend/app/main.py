@@ -363,7 +363,13 @@ def admin_approval(payload: AdminApprovalIn, authorization: str | None = Header(
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "vegz-shop-api"}
+    """Report healthy only when the configured SQL database is reachable."""
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    return {"status": "ok", "service": "vegz-shop-api", "database": "connected"}
 
 
 @app.post("/api/auth/demo-login")
