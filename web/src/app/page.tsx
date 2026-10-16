@@ -69,7 +69,7 @@ export default function ShopHomePage(){
   if(!Number.isFinite(amount)||amount<=0||!Number.isInteger(qty)||qty<0){setError("Enter a valid price and whole-number stock.");return;}
   setBusy(true);setError("");setNotice("");
   try{
-   await request<Product>("/api/products",token,{method:"POST",body:JSON.stringify({name:selected.name,price:amount,stock_qty:qty,is_available:true})});
+   await request<Product>("/api/products",token,{method:"POST",body:JSON.stringify({name:selected.name,category:selected.category,description:selected.description,image_url:selected.image_url,unit:selected.unit,price:amount,stock_qty:qty,is_available:true})});
    setSelected(null);await load(token);setNotice(`${selected.name} added to your product list.`);
   }catch(e){setError(e instanceof Error?e.message:"Could not add product.");}
   finally{setBusy(false);}
