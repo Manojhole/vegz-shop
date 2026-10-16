@@ -28,3 +28,7 @@ jobs:
         run: |
           npm --prefix mobile install --no-audit --no-fund
           npm --prefix mobile run typecheck
+      - name: Bundle Android app with Expo
+        run: |
+          cd mobile
+          npx expo export --platform android
