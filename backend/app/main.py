@@ -439,10 +439,27 @@ def update_shop(payload: ShopPatch, shop: Shop = Depends(current_shop), db: Sess
     return shop_payload(shop)
 
 
+def catalog_image_for(name: str) -> str:
+    """Return the item's own catalog image or a stable category image fallback."""
+    values = CATALOG[name]
+    if values[2]:
+        return values[2]
+    category = values[0]
+    fallback_names = {
+        "Daily essentials": "Tomato",
+        "Fresh picks": "Carrot",
+        "Leafy greens": "Spinach",
+        "Grocery": "Cooking Oil",
+        "Spices": "Turmeric Powder",
+    }
+    fallback = CATALOG.get(fallback_names.get(category, "Tomato"), CATALOG["Tomato"])[2]
+    return fallback or CATALOG["Tomato"][2]
+
+
 @app.get("/api/catalog")
 def list_catalog(shop: Shop = Depends(current_shop)):
     return [
-        {"name": name, "category": values[0], "description": values[1], "image_url": values[2], "unit": values[3]}
+        {"name": name, "category": values[0], "description": values[1], "image_url": catalog_image_for(name), "unit": values[3]}
         for name, values in CATALOG.items()
         if (values[0] in {"Grocery", "Spices"}) == (shop.shop_type == "grocery")
     ]
@@ -458,7 +475,8 @@ def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_sho
     if payload.name not in CATALOG:
         raise HTTPException(status_code=422, detail="Choose an item from the Vegz catalog.")
     data = payload.model_dump()
-    catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[payload.name]
+    catalog_category, catalog_description, _, catalog_unit = CATALOG[payload.name]
+    catalog_image = catalog_image_for(payload.name)
     data["category"], data["description"], data["image_url"], data["unit"] = catalog_category, catalog_description, catalog_image, catalog_unit
     data["image_urls"] = json.dumps(([catalog_image] if catalog_image else []) + [u for u in data["image_urls"] if u and u != catalog_image][:2])
     if not data["image_url"] and data["image_urls"]:
@@ -478,7 +496,8 @@ def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(
     changes = payload.model_dump(exclude_unset=True)
     if "name" in changes and changes["name"] != p.name:
         raise HTTPException(status_code=403, detail="Product identity is fixed by the Vegz catalog.")
-    catalog_category, catalog_description, catalog_image, catalog_unit = CATALOG[p.name]
+    catalog_category, catalog_description, _, catalog_unit = CATALOG[p.name]
+    catalog_image = catalog_image_for(p.name)
     changes.pop("name", None)
     changes.pop("category", None)
     changes.pop("description", None)
@@ -523,7 +542,7 @@ def upload_product_images(
         with (upload_dir / filename).open("wb") as image_file:
             image_file.write(data)
         urls.append(f"/uploads/{filename}")
-    base_image = CATALOG.get(product.name, ("", "", product.image_url, ""))[2]
+    base_image = catalog_image_for(product.name) if product.name in CATALOG else product.image_url
     product.image_url = base_image
     product.image_urls = json.dumps(([base_image] if base_image else []) + [url for url in urls if url != base_image][:2])
     db.commit()

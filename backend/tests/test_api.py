@@ -68,6 +68,25 @@ class ShopApiTests(unittest.TestCase):
         self.assertEqual(approved.status_code, 200, approved.text)
         self.assertEqual(client.get("/api/products", headers=token).status_code, 200)
 
+    def test_every_catalog_item_has_a_builtin_image_and_extra_photos_follow_it(self):
+        catalog_response = client.get("/api/catalog", headers=self.headers)
+        self.assertEqual(catalog_response.status_code, 200, catalog_response.text)
+        catalog = catalog_response.json()
+        self.assertTrue(catalog)
+        self.assertTrue(all(item["image_url"] for item in catalog), "Every catalog item must have a built-in image.")
+        bottle_gourd = next(item for item in catalog if item["name"] == "Bottle Gourd")
+        created = client.post("/api/products", headers=self.headers, json={
+            "name": "Bottle Gourd", "price": 28, "stock_qty": 5, "is_available": True,
+            "image_urls": ["https://example.test/shop-photo-1.jpg", "https://example.test/shop-photo-2.jpg"]
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        product = created.json()
+        self.assertEqual(product["image_url"], bottle_gourd["image_url"])
+        self.assertEqual(product["image_urls"][0], bottle_gourd["image_url"])
+        self.assertEqual(product["image_urls"][1:], [
+            "https://example.test/shop-photo-1.jpg", "https://example.test/shop-photo-2.jpg"
+        ])
+
     def test_auth_required(self):
         response = client.get("/api/products")
         self.assertEqual(response.status_code, 401)
