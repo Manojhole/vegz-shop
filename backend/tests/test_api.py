@@ -60,7 +60,12 @@ class ShopApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         token = {"Authorization": "Bearer " + response.json()["access_token"]}
         self.assertEqual(response.json()["shop"]["approval_status"], "pending")
-        self.assertEqual(client.get("/api/products", headers=token).status_code, 403)
+        draft = client.post("/api/products", headers=token, json={
+            "name": "Tomato", "price": 35, "stock_qty": 5, "is_available": True,
+        })
+        self.assertEqual(draft.status_code, 201, draft.text)
+        self.assertFalse(draft.json()["is_available"], "Pending-shop draft products must stay hidden from customers.")
+        self.assertEqual(client.get("/api/products", headers=token).status_code, 200)
         catalog = client.get("/api/catalog", headers=token)
         self.assertEqual(catalog.status_code, 200)
         self.assertTrue(any(item["image_url"] for item in catalog.json()))
