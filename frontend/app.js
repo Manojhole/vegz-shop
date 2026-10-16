@@ -42,12 +42,10 @@ function signOut(showToast = true) {
 async function refreshAll() {
   const shop = await api("/api/shop");
   state.shop = shop;
-  if (shop.approval_status === "approved") {
-    const [products, orders, catalog] = await Promise.all([api("/api/products"), api("/api/orders"), api("/api/catalog")]);
-    state.products = products; state.orders = orders; state.catalog = catalog;
-  } else {
-    state.products = []; state.orders = []; state.catalog = [];
-  }
+  const catalog = await api("/api/catalog");
+  const products = await api("/api/products");
+  const orders = shop.approval_status === "approved" ? await api("/api/orders") : [];
+  state.products = products; state.orders = orders; state.catalog = catalog;
   renderAll();
   if (shop.approval_status !== "approved") toast("Registration submitted. Your shop is waiting for admin approval.");
 }
@@ -67,8 +65,12 @@ function renderAll() {
   $("#approval-notice").classList.toggle("hidden", approved);
   $("#shop-open-toggle").checked = shop.is_open; $("#accept-orders-toggle").checked = shop.accepts_orders;
   $("#shop-open-toggle").disabled = !approved; $("#accept-orders-toggle").disabled = !approved;
-  $("#add-product-btn").disabled = !approved; $("#empty-add-btn").disabled = !approved;
-  $("#availability-note").textContent = !approved ? "Awaiting admin approval. Availability controls unlock after approval." : shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
+  // Shops may prepare draft listings while approval is pending. The API forces
+  // those listings unavailable until an administrator approves the shop.
+  $("#add-product-btn").disabled = false; $("#empty-add-btn").disabled = false;
+  $("#add-product-btn").title = approved ? "Add a product" : "Add a draft product (hidden from customers until approval)";
+  $("#empty-add-btn").title = $("#add-product-btn").title;
+  $("#availability-note").textContent = !approved ? "Awaiting admin approval. You can prepare draft products now; customers and availability controls unlock after approval." : shop.is_open && shop.accepts_orders ? "✓ Your shop is open and accepting orders. Customers can place new orders." : !shop.is_open ? "Your shop is marked closed. Customers should not place new orders." : "Your shop is open, but new orders are paused.";
   $("#overview-orders").innerHTML = renderOrderRows(orders.filter(o => ["placed","accepted","preparing"].includes(o.status)).slice(0,4), true);
   if (!orders.some(o => ["placed","accepted","preparing"].includes(o.status))) $("#overview-orders").innerHTML = emptyInline("No pending orders", "Incoming orders will show here as soon as customers order.");
   renderInventoryPreview(); renderProducts(); renderOrders();
@@ -152,7 +154,7 @@ function showView(view) {
 function openProduct(product = null) {
   $("#product-form").reset();
   $("#product-id").value = product?.id || "";
-  $("#product-dialog-title").textContent = product ? "Edit vegetable" : "Add vegetable";
+  $("#product-dialog-title").textContent = product ? "Edit product" : (state.shop?.approval_status === "approved" ? "Add product" : "Add draft product");
   const catalog = state.catalog || [];
   $("#product-name").innerHTML = catalog.map(item => '<option value="' + esc(item.name) + '">' + esc(item.name) + '</option>').join("");
   $("#product-name").value = product?.name || catalog[0]?.name || "";
