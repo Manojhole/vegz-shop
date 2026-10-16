@@ -1,103 +1,63 @@
 # Vegz Shop
 
-Shop-owner portal for the Vegz vegetable ordering platform. This is a separate repository from the customer-facing vegz-user app.
+Shop-owner portal and mobile app for vegetable and grocery shops that supply Vegz orders.
 
-## Included in this first version
+## Stack
 
-- Responsive web dashboard for laptop, tablet and mobile.
-- Shop-owner development sign-in; owner data is scoped to the signed-in shop.
-- Register as a vegetable shop or grocery shop; shop type controls product categories and where the shop appears in Vegz User. Add, edit, hide and remove products, update prices/stock, and upload up to three real product photos (JPG/PNG/WEBP, max 5 MB each).
-- Inventory tracking, including in-stock, low-stock, hidden and out-of-stock states.
-- Shop open/closed and accepting-orders controls.
-- Orders inbox with status transitions: placed -> accepted -> preparing -> ready -> out for delivery -> delivered. Cancellation is allowed before dispatch.
-- Public `/api/marketplace` catalog grouped by open shop and tagged with `shop_type` (`vegetable` or `grocery`); authenticated `/api/internal/orders` for the trusted customer-order service; dashboard metrics for catalog, stock, orders and sales.
-- FastAPI, SQLAlchemy and SQLite by default; MySQL-compatible via DATABASE_URL.
-- Dockerfile and GitHub Actions CI.
+- Web portal: Next.js + TypeScript under `web/`
+- Android/iOS client: React Native + Expo Router under `mobile/`
+- API and business logic: FastAPI + SQLAlchemy under `backend/`
+- Database: SQLite by default, PostgreSQL/MySQL URLs supported by SQLAlchemy.
 
-## Run locally
+## Available workflows
 
-Requires Python 3.11+.
+- Development phone/code login; shop city/type are saved at registration.
+- Shop registration remains pending until admin approval. Pending shops cannot publish sellable products or accept orders.
+- Choose items from the predefined Vegz catalog; catalog photos are included. Set price and opening stock.
+- Edit stock and availability; switch an approved shop open/closed.
+- View shop orders and advance allowed order states.
+- Upload images from the legacy web dashboard; the mobile app currently uses built-in catalog images and does not yet upload gallery images.
+- Authenticated `/api/internal/orders` accepts shop-owned suborders from the customer service.
 
-```bash
-python -m venv .venv
-# macOS/Linux
-source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install -r backend/requirements.txt
-cp backend/.env.example .env
-uvicorn backend.app.main:app --reload --port 8000
-```
+Development access code defaults to `123456`. Do not use development login for a public/production release.
 
-Open the dashboard at http://localhost:8000, API docs at http://localhost:8000/docs, and health check at http://localhost:8000/api/health.
-
-The starter development code is 123456 (or set SHOP_DEMO_CODE). Enter an owner mobile number to create that shop's development account. Never use this login mode in production.
-
-To create sample products, sign in and use POST /api/dev/seed from the API docs. The endpoint seeds only when the shop has no products.
-
-## Environment
-
-Copy backend/.env.example to .env. Set a strong random JWT_SECRET, and configure DATABASE_URL. Default:
-
-```
-DATABASE_URL=sqlite:///./vegz_shop.db
-```
-
-Example MySQL URL (install pymysql if choosing this driver):
-
-```
-DATABASE_URL=mysql+pymysql://vegz_user:YOUR_PASSWORD@127.0.0.1:3306/vegz_shop
-```
-
-Container build:
+## Run the web portal
 
 ```bash
-docker build -t vegz-shop .
-docker volume create vegz-shop-uploads
-docker run --rm -p 8000:8000 -v vegz-shop-uploads:/app/frontend/uploads -e JWT_SECRET='replace-with-a-long-random-secret' -e APP_ENV=development vegz-shop
+cd web
+npm install
+NEXT_PUBLIC_VEGZ_SHOP_API_URL=http://localhost:8002 npm run dev
 ```
 
-## API overview
+Open `http://localhost:3000`. The Next.js screen embeds the existing API-backed shop dashboard while each legacy dashboard workflow is migrated into native Next.js components. The original FastAPI-served UI remains available on port 8002.
 
-All shop-specific endpoints except health and development login require the Authorization: Bearer <access_token> header.
+## Run the Expo app
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | /api/health | Liveness check |
-| POST | /api/auth/demo-login | Development-only owner sign-in |
-| GET/PATCH | /api/shop | Read/update shop profile and availability |
-| GET/POST | /api/products | List or add catalog items |
-| GET | /api/marketplace | Public catalog grouped by open shop |
-| POST | /api/internal/orders | Authenticated suborder from user service |
-| POST | /api/products/{id}/images | Upload up to 3 product images |
-| PATCH/DELETE | /api/products/{product_id} | Edit or remove an item |
-| GET | /api/orders | Shop orders, optionally filter by status_filter |
-| PATCH | /api/orders/{order_id}/status | Advance or cancel an order |
-| GET | /api/dashboard | Shop metrics and recent orders |
-| POST | /api/dev/seed | Add sample products once per shop |
-
-## Important integration notes
-
-This is a shop-portal foundation and its starter database is separate from the vegz-user repository. The current order API stores shop-side orders independently so the owner dashboard can be developed and tested. The integration contract is now available: `GET /api/marketplace` serves open shops and orderable products; `POST /api/internal/orders` accepts suborders only when `SHOP_INTERNAL_TOKEN` matches the user service's `SHOP_INTERNAL_TOKEN`. Configure the same strong secret in both apps. These services still use separate databases and must be deployed with reachable private service URLs; do not point the apps at the same database without reviewed migrations.
-
-Also required before production:
-
-1. Replace development login with verified OTP or an approved identity provider.
-2. Add shop onboarding/approval and role-based access controls; secure secrets and configure HTTPS/CORS.
-3. Connect live customer order creation and inventory updates, including transaction-safe stock reservation, cancellation/restock policy and idempotency.
-4. Add image upload/storage instead of relying only on public image URLs.
-5. Add schema migrations, backups, monitoring, rate limiting and end-to-end tests.
-6. Confirm legal, payment and customer-data requirements before launch.
-
-## Project structure
-
+```bash
+cd mobile
+npm install
+npm run android
 ```
-backend/
-  app/main.py        FastAPI API, schema and shop-scoped business logic
-  requirements.txt   Python dependencies
-frontend/
-  index.html         Shop owner app shell
-  styles.css         Responsive design
-  app.js             API integration and dashboard interactions
-Dockerfile
-.github/workflows/ci.yml
+
+Android emulator API default: `http://10.0.2.2:8002`. Override with `EXPO_PUBLIC_VEGZ_SHOP_API_URL` for a physical device / LAN development address.
+
+## Shared local stack
+
+`../vegz-admin/docker-compose.postgres.yml` defines PostgreSQL plus the four APIs and web clients. From the admin repository directory:
+
+```bash
+docker-compose -f docker-compose.postgres.yml up --build -d
 ```
+
+Keep existing volumes. Do not use `down -v`.
+
+## CI
+
+The `dev` workflow runs Python syntax, API unit tests, legacy JavaScript syntax validation, Next.js web build, and Expo TypeScript checking.
+
+## Required before launch
+
+- Production identity provider / verified OTP and rate limits.
+- Stock reservation and rollback under concurrent orders.
+- Object-storage-backed image uploads with access controls.
+- Schema migrations, backups, observability, and end-to-end test of order/dispatch lifecycle.
