@@ -29,7 +29,7 @@ npm install
 NEXT_PUBLIC_VEGZ_SHOP_API_URL=http://localhost:8002 npm run dev
 ```
 
-Open `http://localhost:3000`. The Next.js screen embeds the existing API-backed shop dashboard while each legacy dashboard workflow is migrated into native Next.js components. The original FastAPI-served UI remains available on port 8002.
+Open `http://localhost:3000`. The Next.js portal now calls the FastAPI service directly for shop login, catalog listing, product/stock changes, shop availability and order status. Open the API-served legacy dashboard on port 8002 for the remaining image-gallery upload workflow.
 
 ## Run the Expo app
 
