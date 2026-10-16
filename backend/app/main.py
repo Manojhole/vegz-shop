@@ -466,18 +466,20 @@ def list_catalog(shop: Shop = Depends(current_shop)):
 
 
 @app.get("/api/products")
-def list_products(shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
+def list_products(shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     return [product_payload(p) for p in db.scalars(select(Product).where(Product.shop_id == shop.id).order_by(Product.id.desc())).all()]
 
 
 @app.post("/api/products", status_code=201)
-def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
+def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     if payload.name not in CATALOG:
         raise HTTPException(status_code=422, detail="Choose an item from the Vegz catalog.")
     data = payload.model_dump()
     catalog_category, catalog_description, _, catalog_unit = CATALOG[payload.name]
     catalog_image = catalog_image_for(payload.name)
     data["category"], data["description"], data["image_url"], data["unit"] = catalog_category, catalog_description, catalog_image, catalog_unit
+    if shop.approval_status != "approved":
+        data["is_available"] = False
     data["image_urls"] = json.dumps(([catalog_image] if catalog_image else []) + [u for u in data["image_urls"] if u and u != catalog_image][:2])
     if not data["image_url"] and data["image_urls"]:
         data["image_url"] = data["image_urls"][0]
@@ -489,11 +491,13 @@ def create_product(payload: ProductIn, shop: Shop = Depends(require_approved_sho
 
 
 @app.patch("/api/products/{product_id}")
-def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(require_approved_shop), db: Session = Depends(get_db)):
+def update_product(product_id: int, payload: ProductPatch, shop: Shop = Depends(current_shop), db: Session = Depends(get_db)):
     p = db.scalar(select(Product).where(Product.id == product_id, Product.shop_id == shop.id))
     if p is None:
         raise HTTPException(status_code=404, detail="Vegetable not found.")
     changes = payload.model_dump(exclude_unset=True)
+    if shop.approval_status != "approved" and changes.get("is_available") is True:
+        changes["is_available"] = False
     if "name" in changes and changes["name"] != p.name:
         raise HTTPException(status_code=403, detail="Product identity is fixed by the Vegz catalog.")
     catalog_category, catalog_description, _, catalog_unit = CATALOG[p.name]
