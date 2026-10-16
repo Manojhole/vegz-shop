@@ -80,7 +80,7 @@ export default function ShopApp() {
     }
     setBusy(true); setError("");
     try {
-      await api<Product>("/api/products", token, { method: "POST", body: JSON.stringify({ name: selected.name, price: amount, stock_qty: quantity, is_available: true }) });
+      await api<Product>("/api/products", token, { method: "POST", body: JSON.stringify({ name: selected.name, category: selected.category, description: selected.description, image_url: selected.image_url, unit: selected.unit, price: amount, stock_qty: quantity, is_available: true }) });
       setSelected(null); await load(token);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not add product."); }
     finally { setBusy(false); }
