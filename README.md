@@ -16,7 +16,7 @@ Shop-owner portal and mobile app for vegetable and grocery shops that supply Veg
 - Choose items from the predefined Vegz catalog; catalog photos are included. Set price and opening stock.
 - Edit stock and availability; switch an approved shop open/closed.
 - View shop orders and advance allowed order states.
-- Upload images from the legacy web dashboard; the mobile app currently uses built-in catalog images and does not yet upload gallery images.
+- Upload images from the legacy web dashboard; the mobile app can upload one or two additional JPG/PNG/WEBP photos (5 MB max each) using Expo’s photo picker.
 - Authenticated `/api/internal/orders` accepts shop-owned suborders from the customer service.
 
 Development access code defaults to `123456`. Do not use development login for a public/production release.
