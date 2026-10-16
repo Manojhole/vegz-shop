@@ -19,7 +19,7 @@ async function api(path, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401 && state.token) signOut(false);
-    throw new Error(data.detail || "Something went wrong. Please try again.");
+    throw new Error(typeof data.detail === "string" ? data.detail : Array.isArray(data.detail) ? data.detail.map(x => x.msg || String(x)).join("; ") : "Something went wrong. Please try again.");
   }
   return data;
 }
