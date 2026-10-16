@@ -168,8 +168,12 @@ function openProduct(product = null) {
   $("#product-stock").value = product?.stock_qty ?? 0;
   $("#product-out-of-stock").checked = (product?.stock_qty ?? 0) <= 0;
   $("#product-images").value = "";
+  $("#product-images").disabled = state.shop?.approval_status !== "approved";
   const imageList = product?.image_urls?.length ? product.image_urls : (product?.image_url ? [product.image_url] : (chosen?.image_url ? [chosen.image_url] : []));
   $("#existing-product-images").innerHTML = imageList.map(url => '<img src="' + esc(url) + '" alt="Current product photo">').join("");
+  if (state.shop?.approval_status !== "approved") {
+    $("#existing-product-images").insertAdjacentHTML("beforeend", '<p class="hint">Extra photo uploads unlock after admin approval. This draft stays hidden from customers.</p>');
+  }
   $("#product-description").value = product?.description || "";
   $("#product-available").checked = product?.is_available ?? true;
   $("#product-dialog").showModal();
