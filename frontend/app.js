@@ -172,6 +172,17 @@ function openProduct(product = null) {
   $("#product-available").checked = product?.is_available ?? true;
   $("#product-dialog").showModal();
 }
+function updateCatalogPreview() {
+  if ($("#product-id").value) return;
+  const chosen = (state.catalog || []).find(item => item.name === $("#product-name").value);
+  if (!chosen) return;
+  $("#product-category").value = chosen.category || $("#product-category").value;
+  $("#product-unit").value = chosen.unit || "kg";
+  const image = chosen.image_url || "";
+  $("#existing-product-images").innerHTML = image
+    ? '<img src="' + esc(image) + '" alt="Built-in Vegz catalog photo">'
+    : '<p class="muted">No default photo available for this item.</p>';
+}
 async function withButton(button, task) {
   setBusy(button,true);
   try { await task(); }
@@ -227,6 +238,7 @@ $("#add-product-btn").addEventListener("click",() => openProduct());
 $("#empty-add-btn").addEventListener("click",() => openProduct());
 $("#close-product-dialog").addEventListener("click",() => $("#product-dialog").close());
 $("#cancel-product").addEventListener("click",() => $("#product-dialog").close());
+$("#product-name").addEventListener("change", updateCatalogPreview);
 $("#product-form").addEventListener("submit",async e=>{
   e.preventDefault();
   const id = $("#product-id").value;
