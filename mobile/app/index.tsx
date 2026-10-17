@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { ActivityIndicator, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
 const API_BASE = (process.env.EXPO_PUBLIC_VEGZ_SHOP_API_URL || "http://10.0.2.2:8002").replace(/\/$/, "");
@@ -22,6 +22,12 @@ async function api<T>(path: string, token?: string, init: RequestInit = {}): Pro
 }
 
 export default function ShopApp() {
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(enter, { toValue: 1, duration: 460, useNativeDriver: true }).start();
+    return () => enter.stopAnimation();
+  }, [enter]);
+
   const [token, setToken] = useState("");
   const [shop, setShop] = useState<Shop | null>(null);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -162,7 +168,7 @@ export default function ShopApp() {
   }
 
   if (!token || !shop) {
-    return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
+    return <SafeAreaView style={s.safe}><Animated.ScrollView style={{ opacity: enter }} contentContainerStyle={s.page}>
       <Text style={s.brand}>vegz<Text style={s.period}>shop.</Text></Text>
       <Text style={s.eyebrow}>SHOP PARTNER APP</Text><Text style={s.title}>Your shop.<Text style={s.green}> Your business.</Text></Text>
       <Text style={s.sub}>Manage local vegetables and groceries, update stock, and fulfil customer orders.</Text>
@@ -174,10 +180,10 @@ export default function ShopApp() {
       </View>
       <Text style={s.helper}>Development sign-in only. Production launch requires verified OTP authentication and admin approval.</Text>
       {busy&&<ActivityIndicator color="#176b48" />}{!!error&&<Text style={s.error}>{error}</Text>}
-    </ScrollView></SafeAreaView>;
+    </Animated.ScrollView></SafeAreaView>;
   }
 
-  return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
+  return <SafeAreaView style={s.safe}><Animated.ScrollView style={{ opacity: enter }} contentContainerStyle={s.page}>
     <View style={s.header}><View><Text style={s.brand}>vegz<Text style={s.period}>shop.</Text></Text><Text style={s.muted}>{shop.name} · {shop.city}</Text></View><Pressable onPress={signOut}><Text style={s.link}>Sign out</Text></Pressable></View>
     <View style={s.hero}><Text style={s.eyebrow}>SHOP WORKSPACE</Text><Text style={s.title}>Your daily market.</Text><Text style={s.sub}>Manage stock and keep customers updated.</Text><View style={s.badge}><View style={[s.dot,shop.approval_status==="approved"?s.dotGood:s.dotWait]}/><Text style={s.badgeText}>{shop.approval_status==="approved"?"Approved shop":"Approval: "+shop.approval_status}</Text></View></View>
     {!!error&&<Text style={s.error}>{error}</Text>}
@@ -189,7 +195,7 @@ export default function ShopApp() {
       <Text style={s.label}>Price (₹ / {selected.unit})</Text><TextInput style={s.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad"/>
       <Text style={s.label}>Opening stock</Text><TextInput style={s.input} value={stock} onChangeText={setStock} keyboardType="number-pad"/>
       <View style={s.choiceRow}><Action label="Save listing" onPress={addProduct} disabled={busy} /><Action label="Cancel" onPress={()=>setSelected(null)} secondary /></View></View>}
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.catalogRow}>{catalog.map(item=><Pressable key={item.name} style={s.catalogCard} onPress={()=>{setSelected(item);setPrice("35");setStock("20");}}>{item.image_url?<Image source={{uri:item.image_url}} style={s.catalogImage}/>:<View style={[s.catalogImage,s.imageFallback]}><Text>🥦</Text></View>}<Text style={s.catalogName}>{item.name}</Text><Text style={s.muted}>{item.unit}</Text><Text style={s.addLink}>+ List product</Text></Pressable>)}</ScrollView>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.catalogRow}>{catalog.map(item=><Pressable key={item.name} style={s.catalogCard} onPress={()=>{setSelected(item);setPrice("35");setStock("20");}}>{item.image_url?<Image source={{uri:item.image_url}} style={s.catalogImage}/>:<View style={[s.catalogImage,s.imageFallback]}><Text>🥦</Text></View>}<Text style={s.catalogName}>{item.name}</Text><Text style={s.muted}>{item.unit}</Text><Text style={s.addLink}>+ List product</Text></Pressable>)}</Animated.ScrollView>
     <View style={s.sectionHead}><Text style={s.heading}>My products</Text><Pressable onPress={refresh}><Text style={s.link}>↻ Refresh</Text></Pressable></View>
     {products.map(product=><View key={product.id} style={s.rowCard}>{product.image_url?<Image source={{uri:product.image_url}} style={s.thumb}/>:<View style={[s.thumb,s.imageFallback]}><Text>🥬</Text></View>}<View style={s.rowBody}><Text style={s.productName}>{product.name}</Text><Text style={s.muted}>₹{Number(product.price).toFixed(2)} / {product.unit} · Stock {product.stock_qty}</Text><Text style={s.muted}>{product.approval_status!=="approved"?"Awaiting admin approval":product.is_available?"Available to customers":"Unavailable"}</Text>{product.image_urls&&product.image_urls.length>1&&<View style={s.imageGallery}>{product.image_urls.slice(1,3).map((url,index)=><Image key={url+index} source={{uri:url}} style={s.extraPhoto}/>)}</View>}</View><View style={{gap:6}}><Pressable style={s.smallButton} onPress={()=>toggleProduct(product)} disabled={busy}><Text style={s.smallButtonText}>{product.is_available?"Pause":"Enable"}</Text></Pressable><Pressable style={[s.smallButton,shop.approval_status!=="approved"&&s.disabled]} onPress={()=>void uploadProductImages(product)} disabled={busy||shop.approval_status!=="approved"}><Text style={s.smallButtonText}>Add photos</Text></Pressable></View></View>)}
     <View style={s.sectionHead}><Text style={s.heading}>Incoming orders</Text><Text style={s.muted}>{orders.length} total</Text></View>
@@ -199,7 +205,7 @@ export default function ShopApp() {
     </View>)}
     <Action label={busy?"Working…":"Refresh workspace"} onPress={refresh} disabled={busy}/>
     <Text style={s.helper}>Each listing uses its built-in catalog image and can store up to two extra JPG, PNG or WEBP photos (5 MB maximum per photo).</Text>
-  </ScrollView></SafeAreaView>;
+  </Animated.ScrollView></SafeAreaView>;
 }
 
 function Action({label,onPress,disabled=false,secondary=false,compact=false}:{label:string;onPress:()=>void;disabled?:boolean;secondary?:boolean;compact?:boolean}) {
