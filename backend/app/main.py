@@ -147,6 +147,7 @@ class Product(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    approval_status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -170,6 +171,9 @@ with engine.begin() as connection:
     columns = {column["name"] for column in inspect(engine).get_columns("products")}
     if "image_urls" not in columns:
         connection.execute(text("ALTER TABLE products ADD COLUMN image_urls TEXT NOT NULL DEFAULT '[]'"))
+    if "approval_status" not in columns:
+        # Existing live listings stay approved; newly created products require moderation.
+        connection.execute(text("ALTER TABLE products ADD COLUMN approval_status VARCHAR(24) NOT NULL DEFAULT 'approved'"))
     shop_columns = {column["name"] for column in inspect(engine).get_columns("shops")}
     if "shop_type" not in shop_columns:
         connection.execute(text("ALTER TABLE shops ADD COLUMN shop_type VARCHAR(20) NOT NULL DEFAULT 'vegetable'"))
@@ -277,9 +281,30 @@ def product_payload(p: Product):
     return {"id": p.id, "shop_id": p.shop_id, "name": p.name, "category": p.category, "description": p.description,
             "image_url": p.image_url, "image_urls": images[:3], "unit": p.unit, "price": float(p.price),
             "stock_qty": p.stock_qty, "stock_state": "out_of_stock" if p.stock_qty <= 0 else "in_stock",
-            "is_available": bool(p.is_available),
-            "customer_can_order": bool(p.is_available and p.stock_qty > 0),
+            "is_available": bool(p.is_available), "approval_status": p.approval_status,
+            "customer_can_order": bool(p.approval_status == "approved" and p.is_available and p.stock_qty > 0),
             "created_at": p.created_at.isoformat() + "Z"}
+
+
+def _sync_admin_product(product: Product, shop: Shop) -> None:
+    """Best-effort idempotent product moderation queue sync; never expose unapproved listings."""
+    if not ADMIN_SERVICE_URL or len(PARTNER_ADMIN_TOKEN) < 32:
+        return
+    try:
+        response = httpx.post(
+            ADMIN_SERVICE_URL + "/api/internal/product-sync",
+            headers={"Authorization": "Bearer " + PARTNER_ADMIN_TOKEN},
+            json={
+                "phone": shop.owner_phone, "product_id": product.id, "name": product.name,
+                "category": product.category, "price": str(product.price), "stock_qty": product.stock_qty,
+                "status": product.approval_status,
+            },
+            timeout=4.0,
+        )
+        response.raise_for_status()
+    except (httpx.HTTPError, ValueError) as exc:
+        import logging
+        logging.getLogger("vegz.shop").warning("Admin product sync failed for product %s (%s).", product.id, type(exc).__name__)
 
 
 def order_payload(o: ShopOrder):
@@ -324,7 +349,7 @@ def marketplace(city: str | None = None, db: Session = Depends(get_db)):
         if city_type in seen_city_types:
             continue
         items = db.scalars(select(Product).where(
-            Product.shop_id == shop.id, Product.is_available.is_(True), Product.stock_qty > 0
+            Product.shop_id == shop.id, Product.approval_status == "approved", Product.is_available.is_(True), Product.stock_qty > 0
         ).order_by(Product.category, Product.name)).all()
         if not items:
             continue
@@ -339,6 +364,12 @@ def marketplace(city: str | None = None, db: Session = Depends(get_db)):
 class AdminApprovalIn(BaseModel):
     phone: str = Field(min_length=8, max_length=24)
     status: str = Field(pattern=r"^(approved|rejected|suspended|pending)$")
+
+
+class ProductApprovalIn(BaseModel):
+    phone: str = Field(min_length=8, max_length=24)
+    product_id: int = Field(ge=1)
+    status: str = Field(pattern=r"^(approved|blocked|pending)$")
 
 
 @app.post("/api/internal/admin-approval")
@@ -359,6 +390,29 @@ def admin_approval(payload: AdminApprovalIn, authorization: str | None = Header(
     db.commit()
     db.refresh(shop)
     return shop_payload(shop)
+
+
+@app.post("/api/internal/product-approval")
+def internal_product_approval(payload: ProductApprovalIn, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """Apply an authenticated moderation decision from the admin service."""
+    expected = PARTNER_ADMIN_TOKEN
+    supplied = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
+    if len(expected) < 32 or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Product approval authentication failed.")
+    digits = re.sub(r"\\D", "", payload.phone)
+    phone = "+91" + digits[-10:] if len(digits) >= 10 and (len(digits) == 10 or digits.startswith("91")) else re.sub(r"[^0-9+]", "", payload.phone)
+    shop = db.scalar(select(Shop).where(Shop.owner_phone == phone))
+    if shop is None:
+        raise HTTPException(status_code=404, detail="Shop registration not found.")
+    product = db.scalar(select(Product).where(Product.id == payload.product_id, Product.shop_id == shop.id))
+    if product is None:
+        raise HTTPException(status_code=404, detail="Shop product not found.")
+    product.approval_status = payload.status
+    if payload.status != "approved":
+        product.is_available = False
+    db.commit()
+    db.refresh(product)
+    return product_payload(product)
 
 
 @app.get("/api/health")
@@ -489,10 +543,12 @@ def create_product(payload: ProductIn, shop: Shop = Depends(current_shop), db: S
     data["image_urls"] = json.dumps(([catalog_image] if catalog_image else []) + [u for u in data["image_urls"] if u and u != catalog_image][:2])
     if not data["image_url"] and data["image_urls"]:
         data["image_url"] = data["image_urls"][0]
+    data["approval_status"] = "pending"
     p = Product(shop_id=shop.id, **data)
     db.add(p)
     db.commit()
     db.refresh(p)
+    _sync_admin_product(p, shop)
     return product_payload(p)
 
 
