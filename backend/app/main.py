@@ -5,6 +5,7 @@ import secrets
 import shutil
 import uuid
 import httpx
+import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -287,24 +288,34 @@ def product_payload(p: Product):
 
 
 def _sync_admin_product(product: Product, shop: Shop) -> None:
-    """Best-effort idempotent product moderation queue sync; never expose unapproved listings."""
+    """Retry idempotent admin moderation sync and log actionable failure details."""
     if not ADMIN_SERVICE_URL or len(PARTNER_ADMIN_TOKEN) < 32:
         return
-    try:
-        response = httpx.post(
-            ADMIN_SERVICE_URL + "/api/internal/product-sync",
-            headers={"Authorization": "Bearer " + PARTNER_ADMIN_TOKEN},
-            json={
-                "phone": shop.owner_phone, "product_id": product.id, "name": product.name,
-                "category": product.category, "price": str(product.price), "stock_qty": product.stock_qty,
-                "status": product.approval_status,
-            },
-            timeout=4.0,
-        )
-        response.raise_for_status()
-    except (httpx.HTTPError, ValueError) as exc:
-        import logging
-        logging.getLogger("vegz.shop").warning("Admin product sync failed for product %s (%s).", product.id, type(exc).__name__)
+    payload = {
+        "phone": shop.owner_phone, "product_id": product.id, "name": product.name,
+        "category": product.category, "price": str(product.price), "stock_qty": product.stock_qty,
+        "status": product.approval_status,
+    }
+    logger = __import__("logging").getLogger("vegz.shop")
+    for attempt in range(3):
+        try:
+            response = httpx.post(
+                ADMIN_SERVICE_URL + "/api/internal/product-sync",
+                headers={"Authorization": "Bearer " + PARTNER_ADMIN_TOKEN},
+                json=payload,
+                timeout=4.0,
+            )
+            response.raise_for_status()
+            return
+        except (httpx.HTTPError, ValueError) as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            body = getattr(getattr(exc, "response", None), "text", "")
+            logger.warning(
+                "Admin product sync failed for product %s (attempt %s/3, status=%s, error=%s, response=%s)",
+                product.id, attempt + 1, status, type(exc).__name__, body[:300],
+            )
+            if attempt < 2:
+                time.sleep(0.25 * (attempt + 1))
 
 
 def order_payload(o: ShopOrder):
