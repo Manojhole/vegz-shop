@@ -107,10 +107,17 @@ class ShopApiTests(unittest.TestCase):
         self.assertTrue(payload["image_urls"][0])
         self.assertEqual(len(payload["image_urls"]), 3)
         self.assertNotEqual(payload["image_urls"][0], "https://example.test/shop-tomato-1.jpg")
+        self.assertEqual(payload["approval_status"], "pending")
         enabled = client.patch("/api/shop", headers=self.headers, json={"is_open": True, "accepts_orders": True})
         self.assertEqual(enabled.status_code, 200, enabled.text)
         visible = client.get("/api/marketplace?city=Hubli")
         self.assertEqual(visible.status_code, 200, visible.text)
+        matching = [shop for shop in visible.json() if shop["shop_id"] == enabled.json()["id"]]
+        self.assertFalse(any(item["name"] == "Tomato" for shop in matching for item in shop["products"]), "Pending products must not appear in the customer marketplace.")
+        approved_product = client.post("/api/internal/product-approval", headers={"Authorization": "Bearer test-partner-admin-token-that-is-long-enough"}, json={"phone": "+919876543210", "product_id": payload["id"], "status": "approved"})
+        self.assertEqual(approved_product.status_code, 200, approved_product.text)
+        self.assertEqual(approved_product.json()["approval_status"], "approved")
+        visible = client.get("/api/marketplace?city=Hubli")
         matching = [shop for shop in visible.json() if shop["shop_id"] == enabled.json()["id"]]
         self.assertEqual(len(matching), 1)
         self.assertTrue(any(item["name"] == "Tomato" for item in matching[0]["products"]))
