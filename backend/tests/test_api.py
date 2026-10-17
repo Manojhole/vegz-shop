@@ -125,6 +125,22 @@ class ShopApiTests(unittest.TestCase):
         self.assertEqual(hidden_city.status_code, 200)
         self.assertFalse(any(shop["shop_id"] == enabled.json()["id"] for shop in hidden_city.json()))
 
+    def test_new_product_is_synced_to_admin_moderation_queue(self):
+        from unittest.mock import Mock, patch
+        with patch("backend.app.main.ADMIN_SERVICE_URL", "http://admin.test"), patch(
+            "backend.app.main.httpx.post", return_value=Mock(raise_for_status=Mock())
+        ) as callback:
+            response = client.post("/api/products", headers=self.headers, json={
+                "name": "Potato", "price": 29, "stock_qty": 9, "is_available": True
+            })
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["approval_status"], "pending")
+        args, kwargs = callback.call_args
+        self.assertEqual(args[0], "http://admin.test/api/internal/product-sync")
+        self.assertEqual(kwargs["json"]["phone"], "+919876543210")
+        self.assertEqual(kwargs["json"]["product_id"], response.json()["id"])
+        self.assertEqual(kwargs["json"]["status"], "pending")
+
     def test_registration_is_sent_to_admin_review_queue(self):
         from unittest.mock import Mock, patch
         with patch("backend.app.main.ADMIN_SERVICE_URL", "http://admin.test"), patch("backend.app.main.httpx.post", return_value=Mock(raise_for_status=Mock())) as callback:
