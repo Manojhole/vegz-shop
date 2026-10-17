@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { ActivityIndicator, Animated, Image, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import Constants from "expo-constants";
 
-const API_BASE = (process.env.EXPO_PUBLIC_VEGZ_SHOP_API_URL || "http://10.0.2.2:8002").replace(/\/$/, "");
+const expoHostValue = (Constants.expoConfig as any)?.hostUri || (Constants as any).expoGoConfig?.debuggerHost;
+const expoHost = typeof expoHostValue === "string" ? expoHostValue.split(":")[0] : "";
+const detectedApiBase = expoHost ? `http://${expoHost}:8002` : "http://10.0.2.2:8002";
+const API_BASE = (process.env.EXPO_PUBLIC_VEGZ_SHOP_API_URL || detectedApiBase).replace(/\/$/, "");
 
 type Shop = { name: string; city: string; shop_type: string; approval_status: string; is_open: boolean; accepts_orders: boolean };
 type CatalogItem = { name: string; category: string; description: string; image_url: string; unit: string };
