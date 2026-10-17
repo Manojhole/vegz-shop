@@ -14,6 +14,7 @@ Shop-owner portal and mobile app for vegetable and grocery shops that supply Veg
 - Development phone/code login; shop city/type are saved at registration.
 - Shop registration remains pending until admin approval. Pending shops cannot publish sellable products or accept orders.
 - Choose items from the predefined Vegz catalog; catalog photos are included. Set price and opening stock.
+- New product listings enter `pending` moderation and stay out of the customer marketplace until an administrator approves them. Moderation status is synchronized to the admin service; existing listings are preserved as approved by the additive migration.
 - Edit stock and availability; switch an approved shop open/closed.
 - View shop orders and advance allowed order states.
 - Upload images from the legacy web dashboard; the mobile app can upload one or two additional JPG/PNG/WEBP photos (5 MB max each) using Expo’s photo picker.
